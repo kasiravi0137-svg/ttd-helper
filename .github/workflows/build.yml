@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: unzip -q ttd_helper.zip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create Android project
+        working-directory: ttd_helper
+        run: |
+          cp -r lib /tmp/lib_bak
+          cp pubspec.yaml /tmp/pubspec_bak.yaml
+          flutter create . --platforms=android --org com.kasi.ttdhelper --project-name ttd_helper
+          rm -rf lib && cp -r /tmp/lib_bak lib
+          cp /tmp/pubspec_bak.yaml pubspec.yaml
+          rm -rf test
+
+      - name: Patch Android manifest
+        working-directory: ttd_helper
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' "$M"
+          grep -q 'allowBackup' "$M" || sed -i 's|<application|<application android:allowBackup="false"|' "$M"
+          sed -i 's|android:label="[^"]*"|android:label="TTD Helper"|' "$M"
+
+      - name: Get packages
+        working-directory: ttd_helper
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: ttd_helper
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ttd-helper-apk
+          path: ttd_helper/build/app/outputs/flutter-apk/app-release.apk
