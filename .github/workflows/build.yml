@@ -1,415 +1,49 @@
-import 'dart:async';
-import 'dart:convert';
+name: Build APK
 
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
 
-void main() {
-  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: HomePage()));
-}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-const classes = ['SL', '3A', '2A', '1A', '3E', 'CC', 'EC'];
-const quotas = ['Tatkal', 'Premium Tatkal'];
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-const kUser = 'Kasi72847';
-const kPass = 'kasi@7730';
-const irctcUrl = 'https://www.irctc.co.in/nget/train-search';
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+      - name: Generate Android project (first run only)
+        run: |
+          if [ ! -d android ]; then
+            cp -r lib /tmp/lib_bak
+            cp pubspec.yaml /tmp/pubspec_bak.yaml
+            flutter create . --platforms=android --org com.kasi.ttdhelper --project-name ttd_helper
+            rm -rf lib && cp -r /tmp/lib_bak lib
+            cp /tmp/pubspec_bak.yaml pubspec.yaml
+            rm -rf test
+          fi
 
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
+      - name: Patch Android manifest
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' "$M"
+          grep -q 'allowBackup' "$M" || sed -i 's|<application|<application android:allowBackup="false"|' "$M"
+          sed -i 's|android:label="[^"]*"|android:label="TTD Helper"|' "$M"
 
-class _HomePageState extends State<HomePage> {
-  final fromC = TextEditingController();
-  final toC = TextEditingController();
-  final trainC = TextEditingController();
-  final alertC = TextEditingController(text: '2');
-  String date = '';
-  String cls = 'SL';
-  String quota = 'Tatkal';
-  List<Map<String, String>> passengers = [];
-  SharedPreferences? prefs;
+      - run: flutter pub get
 
-  Timer? ticker;
-  bool running = false;
-  String countdown = 'Timer start cheyyandi';
+      - run: flutter build apk --release
 
-  @override
-  void initState() {
-    super.initState();
-    WakelockPlus.enable();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    ticker?.cancel();
-    WakelockPlus.disable();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final p = await SharedPreferences.getInstance();
-    prefs = p;
-    setState(() {
-      fromC.text = p.getString('from') ?? '';
-      toC.text = p.getString('to') ?? '';
-      trainC.text = p.getString('train') ?? '';
-      alertC.text = p.getString('alertMin') ?? '2';
-      date = p.getString('date') ?? '';
-      cls = p.getString('cls') ?? 'SL';
-      quota = p.getString('quota') ?? 'Tatkal';
-      final raw = p.getString('passengers') ?? '[]';
-      passengers = (jsonDecode(raw) as List)
-          .map((e) => Map<String, String>.from(e as Map))
-          .toList();
-    });
-  }
-
-  Future<void> _save() async {
-    final p = prefs ?? await SharedPreferences.getInstance();
-    await p.setString('from', fromC.text.trim());
-    await p.setString('to', toC.text.trim());
-    await p.setString('train', trainC.text.trim());
-    await p.setString('alertMin', alertC.text.trim().isEmpty ? '2' : alertC.text.trim());
-    await p.setString('date', date);
-    await p.setString('cls', cls);
-    await p.setString('quota', quota);
-    await p.setString('passengers', jsonEncode(passengers));
-  }
-
-  void _snack(String m) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 3)));
-  }
-
-  Future<void> _copy(String label, String text) async {
-    if (text.isEmpty) {
-      _snack('$label khali ga undi');
-      return;
-    }
-    await Clipboard.setData(ClipboardData(text: text));
-    _snack('$label copy ayyindi');
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 130)),
-    );
-    if (d != null) {
-      setState(() {
-        date =
-            '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-      });
-      await _save();
-    }
-  }
-
-  Future<void> _addPassenger() async {
-    if (passengers.length >= 6) {
-      _snack('Max 6 passengers');
-      return;
-    }
-    final nameC = TextEditingController();
-    final ageC = TextEditingController();
-    String gender = 'M';
-    String berth = '';
-    final genders = {'Male': 'M', 'Female': 'F', 'Transgender': 'T'};
-    final berths = {
-      'No preference': '',
-      'Lower': 'LB',
-      'Middle': 'MB',
-      'Upper': 'UB',
-      'Side Lower': 'SL',
-      'Side Upper': 'SU',
-    };
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: const Text('Add passenger'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Name')),
-                TextField(
-                  controller: ageC,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Age'),
-                ),
-                DropdownButton<String>(
-                  isExpanded: true,
-                  value: gender,
-                  items: genders.entries
-                      .map((e) => DropdownMenuItem(value: e.value, child: Text(e.key)))
-                      .toList(),
-                  onChanged: (v) => setD(() => gender = v ?? 'M'),
-                ),
-                DropdownButton<String>(
-                  isExpanded: true,
-                  value: berth,
-                  items: berths.entries
-                      .map((e) => DropdownMenuItem(value: e.value, child: Text(e.key)))
-                      .toList(),
-                  onChanged: (v) => setD(() => berth = v ?? ''),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-          ],
-        ),
-      ),
-    );
-
-    if (ok == true && nameC.text.trim().isNotEmpty && ageC.text.trim().isNotEmpty) {
-      setState(() {
-        passengers.add({
-          'name': nameC.text.trim(),
-          'age': ageC.text.trim(),
-          'gender': gender,
-          'berth': berth,
-        });
-      });
-      await _save();
-    }
-  }
-
-  Future<void> _openChrome() async {
-    await _save();
-    try {
-      await AndroidIntent(
-        action: 'action_view',
-        data: irctcUrl,
-        package: 'com.android.chrome',
-      ).launch();
-    } catch (_) {
-      try {
-        await AndroidIntent(action: 'action_view', data: irctcUrl).launch();
-      } catch (_) {
-        _snack('Chrome open avvaledu');
-      }
-    }
-  }
-
-  Future<void> _openUpi() async {
-    for (final pkg in [
-      'com.google.android.apps.nbu.paisa.user',
-      'com.phonepe.app',
-      'net.one97.paytm',
-    ]) {
-      final i = AndroidIntent(
-        action: 'android.intent.action.MAIN',
-        package: pkg,
-        category: 'android.intent.category.LAUNCHER',
-      );
-      if (await i.canResolveActivity() ?? false) {
-        await i.launch();
-        return;
-      }
-    }
-    _snack('UPI app dorakaledu');
-  }
-
-  void _toggleTimer() {
-    if (running) {
-      ticker?.cancel();
-      setState(() {
-        running = false;
-        countdown = 'Timer aapesanu';
-      });
-      return;
-    }
-    final hour = cls == 'SL' ? 11 : 10;
-    final label = cls == 'SL' ? 'Sleeper' : 'AC';
-    final alertMin = int.tryParse(alertC.text.trim()) ?? 2;
-
-    final now = DateTime.now();
-    var target = DateTime(now.year, now.month, now.day, hour);
-    if (!target.isAfter(now)) target = target.add(const Duration(days: 1));
-
-    var warned = false;
-    setState(() => running = true);
-
-    ticker = Timer.periodic(const Duration(milliseconds: 500), (t) {
-      final left = target.difference(DateTime.now());
-      if (left.isNegative || left.inMilliseconds <= 0) {
-        t.cancel();
-        setState(() {
-          running = false;
-          countdown = '$label Tatkal OPEN! Ippudu book cheyyandi';
-        });
-        _alarm();
-        return;
-      }
-      final s = left.inSeconds;
-      setState(() {
-        countdown =
-            '$label opens: ${(s ~/ 3600).toString().padLeft(2, '0')}:${((s % 3600) ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
-      });
-      if (!warned && s <= alertMin * 60) {
-        warned = true;
-        HapticFeedback.vibrate();
-        _snack('$alertMin min lo open! Chrome lo login ayyi ready ga undandi.');
-      }
-    });
-  }
-
-  Future<void> _alarm() async {
-    for (var i = 0; i < 10; i++) {
-      HapticFeedback.vibrate();
-      SystemSound.play(SystemSoundType.alert);
-      await Future.delayed(const Duration(milliseconds: 400));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tatkal Helper')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Center(
-            child: Text(countdown,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _toggleTimer,
-                  child: Text(running ? 'Stop timer' : 'Start timer'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _openChrome,
-                  child: const Text('Open IRCTC in Chrome'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(onPressed: _openUpi, child: const Text('Open UPI app')),
-          const SizedBox(height: 16),
-          const Text('Copy to clipboard', style: TextStyle(fontWeight: FontWeight.bold)),
-          Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton(onPressed: () => _copy('Username', kUser), child: const Text('Username')),
-              OutlinedButton(onPressed: () => _copy('Password', kPass), child: const Text('Password')),
-              OutlinedButton(onPressed: () => _copy('From', fromC.text.trim()), child: const Text('From')),
-              OutlinedButton(onPressed: () => _copy('To', toC.text.trim()), child: const Text('To')),
-              OutlinedButton(onPressed: () => _copy('Date', date), child: const Text('Date')),
-              OutlinedButton(onPressed: () => _copy('Train number', trainC.text.trim()), child: const Text('Train no.')),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Text('Passengers', style: TextStyle(fontWeight: FontWeight.bold)),
-          if (passengers.isEmpty) const Text('None'),
-          ...passengers.asMap().entries.map((e) {
-            final p = e.value;
-            return Row(
-              children: [
-                Expanded(
-                  child: Text('${e.key + 1}. ${p['name']}, ${p['age']}, ${p['gender']}'),
-                ),
-                TextButton(onPressed: () => _copy('Name', p['name'] ?? ''), child: const Text('Name')),
-                TextButton(onPressed: () => _copy('Age', p['age'] ?? ''), child: const Text('Age')),
-              ],
-            );
-          }),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(onPressed: _addPassenger, child: const Text('Add passenger')),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () async {
-                    setState(() => passengers = []);
-                    await _save();
-                  },
-                  child: const Text('Clear all'),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 32),
-          const Text('Journey details', style: TextStyle(fontWeight: FontWeight.bold)),
-          TextField(
-            controller: fromC,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(labelText: 'From (station code, e.g. SC)'),
-            onChanged: (_) => _save(),
-          ),
-          TextField(
-            controller: toC,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(labelText: 'To (station code, e.g. MAS)'),
-            onChanged: (_) => _save(),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _pickDate,
-            child: Text(date.isEmpty ? 'Select journey date' : 'Journey date: $date'),
-          ),
-          TextField(
-            controller: trainC,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Train number (e.g. 12760)'),
-            onChanged: (_) => _save(),
-          ),
-          const SizedBox(height: 12),
-          const Text('Class'),
-          DropdownButton<String>(
-            isExpanded: true,
-            value: cls,
-            items: classes.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-            onChanged: (v) {
-              setState(() => cls = v ?? 'SL');
-              _save();
-            },
-          ),
-          const Text('Quota'),
-          DropdownButton<String>(
-            isExpanded: true,
-            value: quota,
-            items: quotas.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-            onChanged: (v) {
-              setState(() => quota = v ?? 'Tatkal');
-              _save();
-            },
-          ),
-          TextField(
-            controller: alertC,
-            keyboardType: TextInputType.number,
-            decoration:
-                const InputDecoration(labelText: 'Alert minutes before opening (default 2)'),
-            onChanged: (_) => _save(),
-          ),
-        ],
-      ),
-    );
-  }
-}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ttd-helper-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
