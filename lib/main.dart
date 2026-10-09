@@ -2330,4 +2330,4 @@ const kAutomationJs = r'''
     },
   };
 })();
-'''
+''';
