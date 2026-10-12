@@ -42,6 +42,17 @@ const kJsSteps = r'''
             getOtpButton() ? 'Phone box not found. ' + phoneDiag() : 'Waiting for the phone box...'
           );
         }
+        // Typing only works while the page really has focus (a real tap gives it).
+        if (!document.hasFocus() && (state.tapTries || 0) < 4) {
+          state.tapTries = (state.tapTries || 0) + 1;
+          const rc = el.getBoundingClientRect();
+          return done(false, 'Tap the phone box once and I will fill the number', {
+            needTap: true,
+            x: rc.left + rc.width * 0.6,
+            y: rc.top + rc.height / 2,
+            iw: window.innerWidth,
+          });
+        }
         if (el.isContentEditable && el.tagName !== 'INPUT') {
           el.focus();
           try {
