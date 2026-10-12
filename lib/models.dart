@@ -1,0 +1,159 @@
+import 'dart:convert';
+
+const genders = ['Male', 'Female', 'Other'];
+const idTypes = [
+  'Aadhaar Card',
+  'Passport',
+  'Voter ID',
+  'PAN Card',
+  'Driving License',
+];
+
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+String fmtDate(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+
+/// Different spellings of a slot time, so the page text can be matched.
+List<String> slotVariants(String s) {
+  final t = s.trim();
+  if (t.isEmpty) return [];
+  // Most specific first (with AM/PM), so "12:00 PM" is tried before "12:00".
+  final out = <String>{};
+  final m = RegExp(r'^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?$').firstMatch(t);
+  if (m != null) {
+    final h = int.parse(m[1]!);
+    final mm = m[2] ?? '00';
+    final ap = m[3]?.toUpperCase();
+    final h2 = h.toString().padLeft(2, '0');
+    if (ap != null) out.addAll(['$h:$mm $ap', '$h2:$mm $ap']);
+    out.addAll([t, '$h:$mm', '$h2:$mm']);
+    if (ap != null) out.add('$h $ap');
+  } else {
+    out.add(t);
+  }
+  out.add(t.replaceAll(' ', ''));
+  return out.toList();
+}
+
+class Devotee {
+  Devotee({
+    String? id,
+    this.name = '',
+    this.age = '',
+    this.gender = 'Male',
+    this.idType = 'Aadhaar Card',
+    this.idNumber = '',
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+
+  final String id;
+  String name, age, gender, idType, idNumber;
+
+  bool get isAadhaar => idType.toLowerCase().contains('aadhaar');
+
+  /// Value typed into the TTD site (Aadhaar without spaces).
+  String get siteIdNumber =>
+      isAadhaar ? idNumber.replaceAll(RegExp(r'\D'), '') : idNumber.trim();
+
+  Devotee copy() => Devotee(
+        id: id,
+        name: name,
+        age: age,
+        gender: gender,
+        idType: idType,
+        idNumber: idNumber,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'age': age,
+        'gender': gender,
+        'idType': idType,
+        'idNumber': idNumber,
+      };
+
+  factory Devotee.fromJson(Map<String, dynamic> j) => Devotee(
+        id: j['id'] as String?,
+        name: (j['name'] ?? '') as String,
+        age: (j['age'] ?? '') as String,
+        gender: (j['gender'] ?? 'Male') as String,
+        idType: (j['idType'] ?? 'Aadhaar Card') as String,
+        idNumber: (j['idNumber'] ?? '') as String,
+      );
+}
+
+class Booking {
+  Booking({
+    this.phone = '',
+    this.date,
+    this.slot = '',
+    List<Devotee>? devotees,
+    this.email = '',
+    this.city = '',
+    this.state = '',
+    this.country = 'India',
+    this.pincode = '',
+  }) : devotees = devotees ?? [];
+
+  String phone, slot, email, city, state, country, pincode;
+  DateTime? date;
+  List<Devotee> devotees;
+
+  int get total => devotees.length * 300;
+
+  bool get isBlank =>
+      phone.isEmpty &&
+      date == null &&
+      slot.isEmpty &&
+      devotees.isEmpty &&
+      email.isEmpty &&
+      city.isEmpty &&
+      state.isEmpty &&
+      pincode.isEmpty;
+
+  /// Names of required things that are still empty.
+  List<String> missing() {
+    final m = <String>[];
+    if (phone.length != 10) m.add('phone number');
+    if (date == null) m.add('date');
+    if (slot.trim().isEmpty) m.add('slot time');
+    if (devotees.isEmpty) m.add('devotees');
+    if (email.trim().isEmpty) m.add('email');
+    if (city.trim().isEmpty) m.add('city');
+    if (state.trim().isEmpty) m.add('state');
+    if (country.trim().isEmpty) m.add('country');
+    if (pincode.length != 6) m.add('pincode');
+    return m;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'phone': phone,
+        'date': date?.toIso8601String(),
+        'slot': slot,
+        'devotees': devotees.map((d) => d.toJson()).toList(),
+        'email': email,
+        'city': city,
+        'state': state,
+        'country': country,
+        'pincode': pincode,
+      };
+
+  factory Booking.fromJson(Map<String, dynamic> j) => Booking(
+        phone: (j['phone'] ?? '') as String,
+        date: j['date'] == null ? null : DateTime.tryParse(j['date'] as String),
+        slot: (j['slot'] ?? '') as String,
+        devotees: ((j['devotees'] ?? []) as List)
+            .map((e) => Devotee.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        email: (j['email'] ?? '') as String,
+        city: (j['city'] ?? '') as String,
+        state: (j['state'] ?? '') as String,
+        country: (j['country'] ?? 'India') as String,
+        pincode: (j['pincode'] ?? '') as String,
+      );
+
+  String encode() => jsonEncode(toJson());
+}
