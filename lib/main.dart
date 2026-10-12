@@ -1956,13 +1956,30 @@ const kAutomationJs = r'''
     return clickableOf(c[0]);
   }
 
-  // The mobile number box, found by label, by type, or by the text around it.
+  // Like querySelectorAll, but also looks inside shadow roots.
+  function deepAll(sel, root, out) {
+    root = root || document;
+    out = out || [];
+    root.querySelectorAll(sel).forEach((e) => out.push(e));
+    root.querySelectorAll('*').forEach((h) => {
+      if (h.shadowRoot) deepAll(sel, h.shadowRoot, out);
+    });
+    return out;
+  }
+  function deepActive() {
+    let a = document.activeElement;
+    while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;
+    return a;
+  }
+  const isTextBox = (e) =>
+    e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.isContentEditable === true) &&
+    !SKIP.includes(e.type);
+
+  // The mobile number box, found by label, by type, or by where it sits above Get OTP.
   function phoneInput() {
     let el = inputs(PHONE)[0];
     if (el) return el;
-    const all = [...document.querySelectorAll('input,textarea')].filter(
-      (e) => vis(e) && !SKIP.includes(e.type)
-    );
+    const all = deepAll('input,textarea').filter((e) => vis(e) && !SKIP.includes(e.type));
     el = all.find(
       (e) =>
         e.type === 'tel' ||
@@ -1982,8 +1999,45 @@ const kAutomationJs = r'''
         if (n === 1 && has(t, PHONE)) return e;
       }
     }
-    if (all.length === 1 && present(['get otp'])) return all[0];
+    const btn = getOtpButton();
+    if (btn) {
+      const br = btn.getBoundingClientRect();
+      const cands = all
+        .concat(deepAll('[contenteditable=true],[role=textbox]').filter(vis))
+        .filter((e) => e.getBoundingClientRect().bottom <= br.top + 4)
+        .sort((x, y) => y.getBoundingClientRect().bottom - x.getBoundingClientRect().bottom);
+      if (cands.length) return cands[0];
+    }
+    if (all.length === 1) return all[0];
     return null;
+  }
+  // Last resort: tap where the number box should be and use whatever gets the focus.
+  async function focusPhoneByTap() {
+    const lab = findText(['registered mobile number', 'mobile number'], false);
+    const pre = findText(['(+91)', '+91'], false);
+    for (const t of [pre, lab]) {
+      if (!t) continue;
+      fireClick(t);
+      await sleep(250);
+      const a = deepActive();
+      if (isTextBox(a)) return a;
+    }
+    return null;
+  }
+  function phoneDiag() {
+    const ins = deepAll('input,textarea').map(
+      (e) => e.tagName.toLowerCase() + '[' + (e.type || '') + (vis(e) ? '' : ',hidden') + ']'
+    );
+    const ce = deepAll('[contenteditable=true],[role=textbox]').length;
+    const fr = document.querySelectorAll('iframe').length;
+    const btn = getOtpButton();
+    let near = '';
+    if (btn) {
+      let c = btn;
+      for (let i = 0; i < 3 && c.parentElement; i++) c = c.parentElement;
+      near = (c.outerHTML || '').replace(/\s+/g, ' ').slice(0, 260);
+    }
+    return 'inputs=' + (ins.join(',') || 'none') + ' editable=' + ce + ' iframes=' + fr + (near ? ' html=' + near : '');
   }
   function iconKind(el) {
     const h = (el.outerHTML || '').slice(0, 600);
@@ -2124,9 +2178,24 @@ const kAutomationJs = r'''
 
     fillPhone(p) {
       return run(async () => {
-        const el = phoneInput();
-        if (!el) return done(false, 'Waiting for the phone box...');
-        const ok = await enter(el, p);
+        let el = phoneInput();
+        if (!el && getOtpButton()) el = await focusPhoneByTap();
+        if (!el) {
+          return done(
+            false,
+            getOtpButton() ? 'Phone box not found. ' + phoneDiag() : 'Waiting for the phone box...'
+          );
+        }
+        if (el.isContentEditable && el.tagName !== 'INPUT') {
+          el.focus();
+          try {
+            document.execCommand('selectAll');
+            document.execCommand('insertText', false, p);
+          } catch (e) {}
+        }
+        const ok = el.isContentEditable && el.tagName !== 'INPUT'
+          ? digits(el.innerText).endsWith(p)
+          : await enter(el, p);
         await sleep(700);
         if (!ok) return done(false, 'Could not type the number (box shows "' + (el.value || '') + '")');
         let btn = getOtpButton();
