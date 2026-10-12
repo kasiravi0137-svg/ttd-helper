@@ -1696,81 +1696,99 @@ const kAutomationJs = r'''
     await sleep(150);
     return sameVal(el.value, text);
   }
-  // Phone boxes with a "(+91)" mask often ignore plain value changes, so try several ways.
+  // Phone boxes with a "(+91)" mask update late and may ignore plain value changes,
+  // so type slowly, wait, and check what really ended up in the box.
   async function typePhone(el, p) {
-    const init = ((el.value || '').match(/^\D*91\D*/) || [''])[0];
-    const ok = () => digits(el.value).endsWith(p);
+    const prefix = ((el.value || '').match(/^\D*91\D*/) || [''])[0];
+    const rest = () => {
+      let d = digits(el.value);
+      if (/\(\s*\+?\s*91|\+\s*91/.test(el.value || '')) d = d.slice(2);
+      return d;
+    };
     const caretEnd = () => {
       try {
         el.setSelectionRange(el.value.length, el.value.length);
       } catch (e) {}
     };
-    const reset = async () => {
-      setNative(el, init);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(150);
+    const clearDigits = async () => {
+      el.focus();
+      try {
+        el.setSelectionRange(prefix.length, el.value.length);
+        document.execCommand('delete');
+      } catch (e) {}
+      await sleep(500);
+      if (rest().length) {
+        setNative(el, prefix);
+        el.dispatchEvent(new InputEvent('input', { inputType: 'deleteContentBackward', bubbles: true }));
+        await sleep(500);
+      }
     };
-    const log = [];
+    const kd = (ch) => {
+      const kc = 48 + Number(ch);
+      return { key: ch, code: 'Digit' + ch, keyCode: kc, which: kc, bubbles: true, cancelable: true };
+    };
+    const methods = {
+      A: async () => {
+        for (const ch of p) {
+          try {
+            document.execCommand('insertText', false, ch);
+          } catch (e) {}
+          await sleep(130);
+          caretEnd();
+        }
+      },
+      B: async () => {
+        for (const ch of p) {
+          el.dispatchEvent(new KeyboardEvent('keydown', kd(ch)));
+          el.dispatchEvent(new KeyboardEvent('keypress', kd(ch)));
+          el.dispatchEvent(
+            new InputEvent('beforeinput', { data: ch, inputType: 'insertText', bubbles: true, cancelable: true })
+          );
+          setNative(el, el.value + ch);
+          caretEnd();
+          el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', kd(ch)));
+          await sleep(130);
+        }
+      },
+      C: async () => {
+        setNative(el, prefix + p);
+        el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertFromPaste', bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      D: async () => {
+        setNative(el, p);
+        el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertText', bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    };
     el.scrollIntoView({ block: 'center' });
     el.focus();
     try {
       el.click();
     } catch (e) {}
-    await sleep(200);
-    // A: one digit at a time at the end of the box, like a real keyboard
-    caretEnd();
-    for (const ch of p) {
-      try {
-        document.execCommand('insertText', false, ch);
-      } catch (e) {}
-      await sleep(70);
-      caretEnd();
+    await sleep(400);
+    if (rest() === p) return { ok: true, how: 'already' };
+    const log = [];
+    for (const k of ['A', 'B', 'C', 'D']) {
+      for (let round = 0; round < 2; round++) {
+        if (rest().length) await clearDigits();
+        el.focus();
+        caretEnd();
+        await methods[k]();
+        await sleep(1300);
+        if (rest() === p) return { ok: true, how: k };
+        log.push(k + round + '="' + el.value + '"');
+        // nothing accepted at all: another round of the same method will not help
+        if (!rest().length) break;
+      }
     }
-    await sleep(250);
-    if (ok()) return { ok: true, how: 'A' };
-    log.push('A="' + el.value + '"');
-    // B: full key events with key codes, then value + input event
-    await reset();
-    el.focus();
-    for (const ch of p) {
-      const kc = 48 + Number(ch);
-      const kd = { key: ch, code: 'Digit' + ch, keyCode: kc, which: kc, bubbles: true, cancelable: true };
-      el.dispatchEvent(new KeyboardEvent('keydown', kd));
-      el.dispatchEvent(new KeyboardEvent('keypress', kd));
-      el.dispatchEvent(
-        new InputEvent('beforeinput', { data: ch, inputType: 'insertText', bubbles: true, cancelable: true })
-      );
-      setNative(el, el.value + ch);
-      caretEnd();
-      el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', kd));
-      await sleep(80);
-    }
-    await sleep(250);
-    if (ok()) return { ok: true, how: 'B' };
-    log.push('B="' + el.value + '"');
-    // C: set the whole value in one go, as a paste
-    await reset();
-    el.focus();
-    setNative(el, init + p);
-    el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertFromPaste', bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(300);
-    if (ok()) return { ok: true, how: 'C' };
-    log.push('C="' + el.value + '"');
-    // D: just the digits, no prefix
-    await reset();
-    setNative(el, p);
-    el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertText', bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(300);
-    if (ok()) return { ok: true, how: 'D' };
-    log.push('D="' + el.value + '"');
+    if (rest().length) await clearDigits();
     const attrs = ['type', 'maxlength', 'placeholder', 'inputmode', 'readonly', 'mask', 'pattern']
       .map((a) => (el.hasAttribute(a) ? a + '=' + el.getAttribute(a) : ''))
       .filter(Boolean)
       .join(' ');
-    return { ok: false, how: log.join(' ') + ' | ' + attrs };
+    return { ok: false, how: log.join(' ') + ' | ' + attrs + ' | Tap the phone box once and I will retry' };
   }
   async function enter(el, value) {
     setVal(el, value);
