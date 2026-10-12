@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'cdp.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'page_script_steps.dart';
@@ -83,6 +86,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void initState() {
     super.initState();
     _helper = kAutomationJs;
+    if (Platform.isAndroid) {
+      // Lets the app type into the page with real key events (see cdp.dart).
+      AndroidWebViewController.enableDebugging(true).catchError((_) {});
+    }
     _c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel('TTD', onMessageReceived: _onMessage)
@@ -186,7 +193,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_i >= _steps.length - 1) return;
     _busy = true;
     try {
-      final r = await _exec(_call(_i));
+      final r = _i == 1 ? await _phoneStep() : await _exec(_call(_i));
       if (!mounted) return;
       if (r['ok'] == true) {
         if (r['skip'] == true && _i == 0) {
@@ -215,6 +222,36 @@ class _BrowserScreenState extends State<BrowserScreen> {
     } finally {
       _busy = false;
     }
+  }
+
+  /// Phone step: get the box ready, type the number with real key events, then let the
+  /// page script check it and press Get OTP.
+  Future<Map<String, dynamic>> _phoneStep() async {
+    final prep = await _exec('__ttd.prepPhone(${jsonEncode(_b.phone)})');
+    if (prep['ok'] != true) return prep;
+    var how = 'already typed';
+    if (prep['ready'] == true) {
+      if (mounted) setState(() => _msg = 'Typing your number...');
+      final cdp = await Cdp.connect();
+      if (cdp != null) {
+        try {
+          await cdp.typeDigits(_b.phone);
+          how = 'typed with real keys';
+        } catch (e) {
+          how = 'key typing failed: $e';
+        } finally {
+          cdp.close();
+        }
+        await Future.delayed(const Duration(milliseconds: 700));
+      } else {
+        how = 'keys unavailable (${Cdp.status})';
+      }
+    }
+    final r = await _exec(_call(1));
+    if (r['ok'] != true) {
+      r['msg'] = '${r['msg'] ?? ''}  [$how]';
+    }
+    return r;
   }
 
   /// Taps the page where the page said (the phone box), so the page gets real focus.
