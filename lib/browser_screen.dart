@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'models.dart';
@@ -22,7 +23,7 @@ const _steps = [
       maxAttempts: 4),
   _Step('Phone and OTP request',
       'Type your phone number and tap Get OTP yourself, then tap Done, next.',
-      maxAttempts: 8),
+      maxAttempts: 12),
   _Step('Enter OTP',
       'Type the OTP on the page. The app continues when you are signed in.',
       maxAttempts: null),
@@ -61,6 +62,8 @@ class BrowserScreen extends StatefulWidget {
 
 class _BrowserScreenState extends State<BrowserScreen> {
   late final WebViewController _c;
+  final GlobalKey _webKey = GlobalKey();
+  int _ptr = 900;
   Timer? _timer;
   Completer<Map<String, dynamic>>? _pending;
   String _helper = '';
@@ -103,6 +106,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final j = jsonDecode(m.message) as Map<String, dynamic>;
       final p = _pending;
       if (j['type'] == 'result' && p != null && !p.isCompleted) p.complete(j);
+      if (j['type'] == 'progress' && mounted && !_manual) {
+        setState(() => _msg = (j['msg'] ?? '').toString());
+      }
     } catch (_) {}
   }
 
@@ -117,7 +123,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return {'ok': false, 'msg': '$e'};
     }
     return c.future.timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 60),
       onTimeout: () => {'ok': false, 'msg': 'The page did not answer'},
     );
   }
@@ -194,6 +200,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _advance(note: r['msg']?.toString());
         }
       } else {
+        if (r['needTap'] == true) _tapAt(r);
         _attempts++;
         final max = _steps[_i].maxAttempts;
         final m = (r['msg'] ?? '').toString();
@@ -208,6 +215,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
     } finally {
       _busy = false;
     }
+  }
+
+  /// Taps the page where the page said (the phone box), so the page gets real focus.
+  void _tapAt(Map<String, dynamic> r) {
+    try {
+      final box = _webKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) return;
+      final iw = (r['iw'] as num).toDouble();
+      if (iw <= 0) return;
+      final k = box.size.width / iw;
+      final g = box.localToGlobal(
+          Offset((r['x'] as num).toDouble() * k, (r['y'] as num).toDouble() * k));
+      final id = _ptr++;
+      final t = WidgetsBinding.instance.currentSystemFrameTimeStamp;
+      final gb = GestureBinding.instance;
+      gb.handlePointerEvent(PointerDownEvent(
+          timeStamp: t, pointer: id, kind: PointerDeviceKind.touch, device: id, position: g));
+      Future.delayed(const Duration(milliseconds: 80), () {
+        gb.handlePointerEvent(PointerUpEvent(
+            timeStamp: t + const Duration(milliseconds: 80),
+            pointer: id,
+            kind: PointerDeviceKind.touch,
+            device: id,
+            position: g));
+      });
+    } catch (_) {}
   }
 
   void _advance({String? note}) {
@@ -419,7 +452,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           if (_progress < 100)
             LinearProgressIndicator(
                 value: _progress / 100, minHeight: 3, color: kSaffron),
-          Expanded(child: WebViewWidget(controller: _c)),
+          Expanded(child: WebViewWidget(key: _webKey, controller: _c)),
           _panel(),
         ],
       ),
