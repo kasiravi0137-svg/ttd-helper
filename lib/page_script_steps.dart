@@ -32,6 +32,37 @@ const kJsSteps = r'''
       });
     },
 
+    // Gets the phone box ready (focused, old digits cleared) before the app types into it.
+    prepPhone(p) {
+      return run(async () => {
+        let el = phoneInput();
+        if (!el && getOtpButton()) el = await focusPhoneByTap();
+        if (!el) return done(false, 'Waiting for the phone box...');
+        el.scrollIntoView({ block: 'center' });
+        el.focus();
+        try {
+          el.click();
+        } catch (e) {}
+        await sleep(250);
+        const val = el.value || '';
+        const prefix = (val.match(/^\D*91\D*/) || [''])[0];
+        let d = digits(val);
+        if (/\(\s*\+?\s*91|\+\s*91/.test(val)) d = d.slice(2);
+        if (d === p) return done(true, 'typed', { typed: true });
+        if (d.length) {
+          try {
+            el.setSelectionRange(prefix.length, val.length);
+            document.execCommand('delete');
+          } catch (e) {}
+          await sleep(300);
+        }
+        try {
+          el.setSelectionRange(el.value.length, el.value.length);
+        } catch (e) {}
+        done(true, 'ready', { ready: true });
+      });
+    },
+
     fillPhone(p) {
       return run(async () => {
         let el = phoneInput();
@@ -43,7 +74,9 @@ const kJsSteps = r'''
           );
         }
         // Typing only works while the page really has focus (a real tap gives it).
-        if (!document.hasFocus() && (state.tapTries || 0) < 4) {
+        let have = digits(el.value || '');
+        if (/\(\s*\+?\s*91|\+\s*91/.test(el.value || '')) have = have.slice(2);
+        if (have !== p && !document.hasFocus() && (state.tapTries || 0) < 1) {
           state.tapTries = (state.tapTries || 0) + 1;
           const rc = el.getBoundingClientRect();
           return done(false, 'Tap the phone box once and I will fill the number', {
