@@ -1696,6 +1696,82 @@ const kAutomationJs = r'''
     await sleep(150);
     return sameVal(el.value, text);
   }
+  // Phone boxes with a "(+91)" mask often ignore plain value changes, so try several ways.
+  async function typePhone(el, p) {
+    const init = ((el.value || '').match(/^\D*91\D*/) || [''])[0];
+    const ok = () => digits(el.value).endsWith(p);
+    const caretEnd = () => {
+      try {
+        el.setSelectionRange(el.value.length, el.value.length);
+      } catch (e) {}
+    };
+    const reset = async () => {
+      setNative(el, init);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(150);
+    };
+    const log = [];
+    el.scrollIntoView({ block: 'center' });
+    el.focus();
+    try {
+      el.click();
+    } catch (e) {}
+    await sleep(200);
+    // A: one digit at a time at the end of the box, like a real keyboard
+    caretEnd();
+    for (const ch of p) {
+      try {
+        document.execCommand('insertText', false, ch);
+      } catch (e) {}
+      await sleep(70);
+      caretEnd();
+    }
+    await sleep(250);
+    if (ok()) return { ok: true, how: 'A' };
+    log.push('A="' + el.value + '"');
+    // B: full key events with key codes, then value + input event
+    await reset();
+    el.focus();
+    for (const ch of p) {
+      const kc = 48 + Number(ch);
+      const kd = { key: ch, code: 'Digit' + ch, keyCode: kc, which: kc, bubbles: true, cancelable: true };
+      el.dispatchEvent(new KeyboardEvent('keydown', kd));
+      el.dispatchEvent(new KeyboardEvent('keypress', kd));
+      el.dispatchEvent(
+        new InputEvent('beforeinput', { data: ch, inputType: 'insertText', bubbles: true, cancelable: true })
+      );
+      setNative(el, el.value + ch);
+      caretEnd();
+      el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', kd));
+      await sleep(80);
+    }
+    await sleep(250);
+    if (ok()) return { ok: true, how: 'B' };
+    log.push('B="' + el.value + '"');
+    // C: set the whole value in one go, as a paste
+    await reset();
+    el.focus();
+    setNative(el, init + p);
+    el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertFromPaste', bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(300);
+    if (ok()) return { ok: true, how: 'C' };
+    log.push('C="' + el.value + '"');
+    // D: just the digits, no prefix
+    await reset();
+    setNative(el, p);
+    el.dispatchEvent(new InputEvent('input', { data: p, inputType: 'insertText', bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(300);
+    if (ok()) return { ok: true, how: 'D' };
+    log.push('D="' + el.value + '"');
+    const attrs = ['type', 'maxlength', 'placeholder', 'inputmode', 'readonly', 'mask', 'pattern']
+      .map((a) => (el.hasAttribute(a) ? a + '=' + el.getAttribute(a) : ''))
+      .filter(Boolean)
+      .join(' ');
+    return { ok: false, how: log.join(' ') + ' | ' + attrs };
+  }
   async function enter(el, value) {
     setVal(el, value);
     await sleep(150);
@@ -2193,15 +2269,20 @@ const kAutomationJs = r'''
             document.execCommand('insertText', false, p);
           } catch (e) {}
         }
-        const ok = el.isContentEditable && el.tagName !== 'INPUT'
-          ? digits(el.innerText).endsWith(p)
-          : await enter(el, p);
+        let ok;
+        let how = '';
+        if (el.isContentEditable && el.tagName !== 'INPUT') {
+          ok = digits(el.innerText).endsWith(p);
+        } else {
+          const r = await typePhone(el, p);
+          ok = r.ok;
+          how = r.how;
+        }
         await sleep(700);
-        if (!ok) return done(false, 'Could not type the number (box shows "' + (el.value || '') + '")');
+        if (!ok) return done(false, 'Could not type the number (box shows "' + (el.value || '') + '") ' + how);
         let btn = getOtpButton();
         if (btn && isDisabled(btn)) {
           // The page may only trust real key events: type the number again key by key.
-          await typeInto(el, p, true);
           await sleep(800);
           btn = getOtpButton();
         }
