@@ -292,7 +292,7 @@ const kJsHelpers = r'''
           try {
             document.execCommand('insertText', false, ch);
           } catch (e) {}
-          await sleep(130);
+          await sleep(100);
           caretEnd();
         }
       },
@@ -360,8 +360,9 @@ const kJsHelpers = r'''
         if (rest().length) await clearDigits();
         el.focus();
         caretEnd();
+        post({ type: 'progress', msg: 'Typing the number (method ' + k + '), box shows "' + el.value + '"' });
         await methods[k]();
-        await sleep(1300);
+        await sleep(850);
         if (rest() === p) return { ok: true, how: k };
         log.push(k + round + '="' + el.value + '"');
         // nothing accepted at all: another round of the same method will not help
