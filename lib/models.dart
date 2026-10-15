@@ -1,5 +1,13 @@
 import 'dart:convert';
 
+// Contact details that are always used on the TTD site (never asked in the app).
+const kPhone = '7730004220';
+const kEmail = 'ravanam8@gmail.com';
+const kCity = 'Dornala';
+const kState = 'Andhra Pradesh';
+const kCountry = 'India';
+const kPincode = '523331';
+
 const genders = ['Male', 'Female', 'Other'];
 const idTypes = [
   'Aadhaar Card',
@@ -87,15 +95,15 @@ class Devotee {
 
 class Booking {
   Booking({
-    this.phone = '',
+    this.phone = kPhone,
     this.date,
     this.slot = '',
     List<Devotee>? devotees,
-    this.email = '',
-    this.city = '',
-    this.state = '',
-    this.country = 'India',
-    this.pincode = '',
+    this.email = kEmail,
+    this.city = kCity,
+    this.state = kState,
+    this.country = kCountry,
+    this.pincode = kPincode,
   }) : devotees = devotees ?? [];
 
   String phone, slot, email, city, state, country, pincode;
@@ -104,15 +112,7 @@ class Booking {
 
   int get total => devotees.length * 300;
 
-  bool get isBlank =>
-      phone.isEmpty &&
-      date == null &&
-      slot.isEmpty &&
-      devotees.isEmpty &&
-      email.isEmpty &&
-      city.isEmpty &&
-      state.isEmpty &&
-      pincode.isEmpty;
+  bool get isBlank => date == null && slot.isEmpty && devotees.isEmpty;
 
   /// Names of required things that are still empty.
   List<String> missing() {
@@ -141,18 +141,13 @@ class Booking {
         'pincode': pincode,
       };
 
+  // Contact details are fixed: whatever was saved before is ignored for them.
   factory Booking.fromJson(Map<String, dynamic> j) => Booking(
-        phone: (j['phone'] ?? '') as String,
         date: j['date'] == null ? null : DateTime.tryParse(j['date'] as String),
         slot: (j['slot'] ?? '') as String,
         devotees: ((j['devotees'] ?? []) as List)
             .map((e) => Devotee.fromJson(e as Map<String, dynamic>))
             .toList(),
-        email: (j['email'] ?? '') as String,
-        city: (j['city'] ?? '') as String,
-        state: (j['state'] ?? '') as String,
-        country: (j['country'] ?? 'India') as String,
-        pincode: (j['pincode'] ?? '') as String,
       );
 
   String encode() => jsonEncode(toJson());
