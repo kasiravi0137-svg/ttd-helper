@@ -38,6 +38,25 @@ const kJsSteps = r'''
         const el = phoneInput();
         const a = deepActive();
         const btn = getOtpButton();
+        const inputs = deepAll('input,textarea')
+          .map((e) => {
+            const r = e.getBoundingClientRect();
+            return (
+              e.tagName.toLowerCase() + '[' + (e.type || '') +
+              (e.readOnly ? ',readonly' : '') +
+              (e.disabled ? ',disabled' : '') +
+              (vis(e) ? '' : ',hidden') +
+              ',w=' + Math.round(r.width) +
+              ',v="' + e.value + '"' +
+              (e.maxLength > 0 && e.maxLength < 100000 ? ',max=' + e.maxLength : '') +
+              (e.inputMode ? ',mode=' + e.inputMode : '') + ']'
+            );
+          })
+          .join(' ');
+        const attrs = el
+          ? [...el.attributes].filter((x) => x.name !== 'style').map((x) => x.name + '=' + x.value).join(' ')
+          : '-';
+        const pr = el ? reactPropsFor(el) : null;
         done(true, 'probe', {
           info:
             'box=' + (el ? '"' + el.value + '"' : 'none') +
@@ -45,7 +64,9 @@ const kJsSteps = r'''
             ' active=' + (a ? a.tagName.toLowerCase() + (a === el ? '(the box)' : '(other)') : 'none') +
             ' fw=' + (el ? frameworkHint(el) : '-') +
             ' otpBtn=' + (btn ? (isDisabled(btn) ? 'disabled' : 'enabled') : 'none') +
-            ' html=' + (el ? (el.outerHTML || '').replace(/\s+/g, ' ').slice(0, 240) : '-'),
+            ' inputs=' + inputs +
+            ' attrs=' + attrs +
+            ' reactProps=' + (pr ? Object.keys(pr).join(',') : '-'),
         });
       });
     },
