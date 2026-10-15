@@ -4,8 +4,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-//Ravi
-
 /// Types into the page with real key events through the WebView's own debugging
 /// socket (the app talks to its own WebView; nothing leaves the phone).
 /// Real key events are the one thing masked phone boxes always accept.
@@ -31,11 +29,42 @@ class Cdp {
 
   static Future<String> _httpGet(String path) async {
     final s = await Socket.connect(_addr, 0, timeout: const Duration(seconds: 3));
-    s.write('GET $path HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+    final done = Completer<String>();
     final chunks = <int>[];
-    await s.listen(chunks.addAll).asFuture<void>().timeout(const Duration(seconds: 4));
-    s.destroy();
-    return utf8.decode(chunks, allowMalformed: true);
+    // The debugging server keeps the connection open, so stop once the body is complete.
+    bool complete() {
+      final text = latin1.decode(chunks, allowInvalid: true);
+      final end = text.indexOf('\r\n\r\n');
+      if (end < 0) return false;
+      final m = RegExp(r'content-length:\s*(\d+)', caseSensitive: false)
+          .firstMatch(text.substring(0, end));
+      if (m != null) return chunks.length - (end + 4) >= int.parse(m.group(1)!);
+      final body = text.substring(end + 4).trim();
+      return body.startsWith('[') && body.endsWith(']');
+    }
+
+    s.listen(
+      (d) {
+        chunks.addAll(d);
+        if (!done.isCompleted && complete()) {
+          done.complete(utf8.decode(chunks, allowMalformed: true));
+        }
+      },
+      onError: (Object e) {
+        if (!done.isCompleted) done.completeError(e);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete(utf8.decode(chunks, allowMalformed: true));
+      },
+    );
+    s.write('GET $path HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+    try {
+      return await done.future.timeout(const Duration(seconds: 5), onTimeout: () {
+        return utf8.decode(chunks, allowMalformed: true);
+      });
+    } finally {
+      s.destroy();
+    }
   }
 
   static Future<Cdp?> connect() async {
@@ -45,7 +74,8 @@ class Cdp {
       final a = body.indexOf('[');
       final z = body.lastIndexOf(']');
       if (a < 0 || z <= a) {
-        status = 'no target list';
+        final head = body.replaceAll(RegExp(r'\s+'), ' ');
+        status = 'no target list, got: ${head.length > 120 ? head.substring(0, 120) : head}';
         return null;
       }
       final list = jsonDecode(body.substring(a, z + 1)) as List;
