@@ -1,309 +1,569 @@
-// Page script, part 2: the step functions (login, phone, date, slot, devotees...).
-import 'page_script_helpers.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'cdp.dart';
+import 'models.dart';
+import 'theme.dart';
+import 'page_script_steps.dart';
 
-const kJsSteps = r'''
-  // ---------- public API ----------
-  window.__ttd = {
-    v: 4,
-    state,
+/// Official TTD booking site. Change here if TTD moves the portal.
+const kTtdUrl = 'https://ttdevasthanams.ap.gov.in';
 
-    openLogin() {
-      return run(async () => {
-        if (loginOpen()) return done(true, 'Login box is open');
-        window.scrollTo(0, 0);
-        await sleep(300);
-        if (present(['login', 'log in', 'sign in']) && clickText(['login', 'log in', 'sign in'], true)) {
-          await sleep(1000);
-          if (loginOpen()) return done(true, 'Opened login');
-        }
-        const t = loginTargets();
-        if (!t.length) return done(false, 'Login icon not found (' + lastIconInfo + ')');
-        if (iconKind(t[0]) === 'logout') return done(true, 'Already signed in', { skip: true });
-        state.iconClicks++;
-        const tried = [];
-        for (const el of t.slice(0, 4)) {
-          if (iconKind(el) === 'logout') continue;
-          tried.push(descr(el));
-          fireClick(el);
-          await sleep(1000);
-          if (loginOpen()) return done(true, 'Opened login');
-        }
-        done(false, 'Tapped ' + tried.join(', ') + ' but no login box appeared.');
-      });
-    },
+class _Step {
+  const _Step(this.label, this.hint, {this.maxAttempts = 10});
+  final String label;
+  final String hint;
+  final int? maxAttempts; // null = keep waiting
+}
 
-    // Gets the phone box ready (focused, old digits cleared) before the app types into it.
-    prepPhone(p) {
-      return run(async () => {
-        let el = phoneInput();
-        if (!el && getOtpButton()) el = await focusPhoneByTap();
-        if (!el) return done(false, 'Waiting for the phone box...');
-        el.scrollIntoView({ block: 'center' });
-        el.focus();
-        try {
-          el.click();
-        } catch (e) {}
-        await sleep(250);
-        const val = el.value || '';
-        const prefix = (val.match(/^\D*91\D*/) || [''])[0];
-        let d = digits(val);
-        if (/\(\s*\+?\s*91|\+\s*91/.test(val)) d = d.slice(2);
-        if (d === p) return done(true, 'typed', { typed: true });
-        if (d.length) {
-          try {
-            el.setSelectionRange(prefix.length, val.length);
-            document.execCommand('delete');
-          } catch (e) {}
-          await sleep(300);
-        }
-        try {
-          el.setSelectionRange(el.value.length, el.value.length);
-        } catch (e) {}
-        done(true, 'ready', { ready: true });
-      });
-    },
+const _steps = [
+  _Step('Open login',
+      'Tap the login icon (top right) yourself, then tap Done, next.',
+      maxAttempts: 4),
+  _Step('Phone and OTP request',
+      'Type your phone number and tap Get OTP yourself, then tap Done, next.',
+      maxAttempts: 12),
+  _Step('Enter OTP',
+      'Type the OTP on the page. The app continues when you are signed in.',
+      maxAttempts: null),
+  _Step('Special entry darshan',
+      'Tap the Special Entry Darshan tile yourself, then tap Done, next.',
+      maxAttempts: 10),
+  _Step('Pick date',
+      'Tap your date on the calendar yourself, then tap Done, next.',
+      maxAttempts: 5),
+  _Step('Number of tickets',
+      'Choose the number of tickets yourself, then tap Done, next.',
+      maxAttempts: 4),
+  _Step('Pick slot',
+      'Tap your slot yourself, then tap Done, next.',
+      maxAttempts: 4),
+  _Step('Continue to details',
+      'Tap Continue until the Pilgrim Details page opens, then tap Done, next.',
+      maxAttempts: 8),
+  _Step('Devotee details',
+      'Fill the pilgrim fields shown above yourself, then tap Done, next.',
+      maxAttempts: 3),
+  _Step('General details',
+      'Fill email, city, state and pincode yourself, then tap Done, next.',
+      maxAttempts: 3),
+  _Step('Check and pay',
+      'Check everything, tap Continue yourself, then do captcha and payment.'),
+];
 
-    fillPhone(p) {
-      return run(async () => {
-        let el = phoneInput();
-        if (!el && getOtpButton()) el = await focusPhoneByTap();
-        if (!el) {
-          return done(
-            false,
-            getOtpButton() ? 'Phone box not found. ' + phoneDiag() : 'Waiting for the phone box...'
-          );
-        }
-        // Typing only works while the page really has focus (a real tap gives it).
-        let have = digits(el.value || '');
-        if (/\(\s*\+?\s*91|\+\s*91/.test(el.value || '')) have = have.slice(2);
-        if (have !== p && !document.hasFocus() && (state.tapTries || 0) < 1) {
-          state.tapTries = (state.tapTries || 0) + 1;
-          const rc = el.getBoundingClientRect();
-          return done(false, 'Tap the phone box once and I will fill the number', {
-            needTap: true,
-            x: rc.left + rc.width * 0.6,
-            y: rc.top + rc.height / 2,
-            iw: window.innerWidth,
+class BrowserScreen extends StatefulWidget {
+  const BrowserScreen({super.key, required this.booking});
+  final Booking booking;
+
+  @override
+  State<BrowserScreen> createState() => _BrowserScreenState();
+}
+
+class _BrowserScreenState extends State<BrowserScreen> {
+  late final WebViewController _c;
+  final GlobalKey _webKey = GlobalKey();
+  int _ptr = 900;
+  final List<String> _log = [];
+  Timer? _timer;
+  Completer<Map<String, dynamic>>? _pending;
+  String _helper = '';
+
+  int _i = 0;
+  int _attempts = 0;
+  int _progress = 0;
+  bool _paused = false;
+  bool _manual = false;
+  bool _busy = false;
+  bool _expanded = false;
+  String _msg = 'Loading the TTD site...';
+
+  Booking get _b => widget.booking;
+
+  @override
+  void initState() {
+    super.initState();
+    _helper = kAutomationJs;
+    if (Platform.isAndroid) {
+      // Lets the app type into the page with real key events (see cdp.dart).
+      AndroidWebViewController.enableDebugging(true).catchError((_) {});
+    }
+    _c = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..addJavaScriptChannel('TTD', onMessageReceived: _onMessage)
+      ..setNavigationDelegate(NavigationDelegate(
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        },
+      ))
+      ..loadRequest(Uri.parse(kTtdUrl));
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _onMessage(JavaScriptMessage m) {
+    try {
+      final j = jsonDecode(m.message) as Map<String, dynamic>;
+      final p = _pending;
+      if (j['type'] == 'result' && p != null && !p.isCompleted) p.complete(j);
+      if (j['type'] == 'log') _addLog('page: ${j['msg']}');
+      if (j['type'] == 'progress' && mounted && !_manual) {
+        setState(() => _msg = (j['msg'] ?? '').toString());
+      }
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> _exec(String call) async {
+    if (_helper.isEmpty) return {'ok': false, 'msg': 'Starting...'};
+    final c = Completer<Map<String, dynamic>>();
+    _pending = c;
+    try {
+      await _c.runJavaScript(_helper);
+      await _c.runJavaScript(call);
+    } catch (e) {
+      return {'ok': false, 'msg': '$e'};
+    }
+    return c.future.timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => {'ok': false, 'msg': 'The page did not answer'},
+    );
+  }
+
+  // ---------- data sent to the page ----------
+
+  Map<String, dynamic> _siteDevotee(Devotee d) => {
+        'name': d.name.trim(),
+        'age': d.age.trim(),
+        'gender': d.gender,
+        'idType': d.idType,
+        'idNumber': d.siteIdNumber,
+      };
+
+  Map<String, dynamic> get _generalArgs => {
+        'email': _b.email,
+        'city': _b.city,
+        'state': _b.state,
+        'country': _b.country,
+        'pincode': _b.pincode,
+      };
+
+  Map<String, dynamic> get _dateArgs {
+    final d = _b.date!;
+    return {'day': d.day, 'month': d.month, 'year': d.year};
+  }
+
+  String _call(int i) {
+    switch (i) {
+      case 0:
+        return '__ttd.openLogin()';
+      case 1:
+        return '__ttd.fillPhone(${jsonEncode(_b.phone)})';
+      case 2:
+        return '__ttd.loggedIn()';
+      case 3:
+        return '__ttd.click(${jsonEncode(['special entry darshan'])}, true)';
+      case 4:
+        return '__ttd.pickDate(${jsonEncode(_dateArgs)})';
+      case 5:
+        return '__ttd.tickets(${_b.devotees.length})';
+      case 6:
+        return '__ttd.slot(${jsonEncode({'slots': slotVariants(_b.slot)})})';
+      case 7:
+        return '__ttd.next()';
+      case 8:
+        return '__ttd.devotees(${jsonEncode({
+              'list': _b.devotees.map(_siteDevotee).toList()
+            })})';
+      case 9:
+        return '__ttd.general(${jsonEncode(_generalArgs)})';
+    }
+    return '';
+  }
+
+  // ---------- step runner ----------
+
+  Future<void> _tick() async {
+    if (!mounted || _paused || _manual || _busy) return;
+    if (_i >= _steps.length - 1) return;
+    _busy = true;
+    try {
+      final r = _i == 1 ? await _phoneStep() : await _exec(_call(_i));
+      if (!mounted) return;
+      if (_i != 1) _addLog('step ${_i + 1} ${_steps[_i].label}: ok=${r['ok']} ${r['msg'] ?? ''}');
+      if (r['ok'] == true) {
+        if (r['skip'] == true && _i == 0) {
+          // Already signed in: jump straight to Special Entry Darshan.
+          setState(() {
+            _i = 3;
+            _attempts = 0;
+            _msg = 'Already signed in';
           });
-        }
-        if (el.isContentEditable && el.tagName !== 'INPUT') {
-          el.focus();
-          try {
-            document.execCommand('selectAll');
-            document.execCommand('insertText', false, p);
-          } catch (e) {}
-        }
-        let ok;
-        let how = '';
-        if (el.isContentEditable && el.tagName !== 'INPUT') {
-          ok = digits(el.innerText).endsWith(p);
         } else {
-          const r = await typePhone(el, p);
-          ok = r.ok;
-          how = r.how;
+          _advance(note: r['msg']?.toString());
         }
-        await sleep(700);
-        if (!ok) return done(false, 'Could not type the number (box shows "' + (el.value || '') + '") ' + how);
-        let btn = getOtpButton();
-        if (btn && isDisabled(btn)) {
-          // The page may only trust real key events: type the number again key by key.
-          await sleep(800);
-          btn = getOtpButton();
-        }
-        if (!btn) return done(true, 'Phone filled, tap Get OTP');
-        if (isDisabled(btn)) return done(false, 'Number typed but Get OTP is still disabled');
-        fireClick(btn);
-        await sleep(1000);
-        done(true, 'Phone filled, OTP requested');
-      });
-    },
-
-    loggedIn() {
-      return run(async () => {
-        const dlg = inputs(['otp', 'enter otp']);
-        if (dlg.length || phoneInput() || otpVisible()) {
-          state.sawDialog = true;
-          state.gone = 0;
-          return done(false, '');
-        }
-        const ic = headerIcon();
-        if (ic && iconKind(ic) === 'logout') return done(true, 'Signed in');
-        if (state.sawDialog) {
-          state.gone++;
-          if (state.gone >= 2) return done(true, 'Signed in');
-        }
-        done(false, '');
-      });
-    },
-
-    click(texts, exact) {
-      return run(async () => {
-        if (clickText(texts, !!exact)) {
-          await sleep(900);
-          done(true, 'Opened ' + texts[0]);
-        } else {
-          done(false, 'Waiting for "' + texts[0] + '"...');
-        }
-      });
-    },
-
-    pickDate(a) {
-      return run(async () => {
-        const ok = await gotoMonth(a.year, a.month - 1);
-        if (!ok) return done(false, 'Could not reach that month on the calendar');
-        const hdr = calHeader();
-        const top = hdr ? hdr.getBoundingClientRect().bottom : 0;
-        const day = String(a.day);
-        let c = [
-          ...document.querySelectorAll('td,button,a,div,span,li,[role=gridcell]'),
-        ].filter((e) => {
-          if (!vis(e)) return false;
-          const r = e.getBoundingClientRect();
-          return norm(e.innerText) === day && r.width <= 150 && r.height <= 150 && r.top >= top - 5 && r.top < top + 800;
-        });
-        c = c.filter((e) => !c.some((o) => o !== e && e.contains(o)));
-        if (!c.length) return done(false, 'Waiting for day ' + day + ' on the calendar...');
-        const cell = c[0];
-        const st = dateState(bgOf(cell));
-        if (st === 'full') return done(false, 'Quota is full on this date. Pick another date.');
-        if (st === 'na') return done(false, 'Slots are not available on this date.');
-        if (st === 'notreleased') return done(false, 'Quota is not released for this date yet.');
-        fireClick(cell);
-        await sleep(900);
-        done(true, 'Date ' + day + ' selected');
-      });
-    },
-
-    tickets(n) {
-      return run(async () => {
-        const want = String(n);
-        const keys = ['number of tickets', 'no of tickets', 'tickets'];
-        const s = selects(keys)[0];
-        if (s && (await pickFrom(s, want))) return done(true, 'Tickets set to ' + want);
-        const labs = labelEls(keys);
-        if (!labs[0]) return done(false, 'Waiting for the tickets box...');
-        const ctl = controlFor(labs[0]);
-        const words = norm(ctl.innerText).split(' ');
-        if (words[words.length - 1] === want) return done(true, 'Tickets already ' + want);
-        const r = await openAndPick(ctl, want, true);
-        done(r.ok, r.ok ? 'Tickets set to ' + want : 'Tickets: ' + r.why);
-      });
-    },
-
-    slot(a) {
-      return run(async () => {
-        const all = [...document.querySelectorAll('div,span,p,label,li,mat-radio-button')].filter(
-          (e) => vis(e) && (e.innerText || '').length < 90
-        );
-        let el = null;
-        let used = '';
-        for (const v of a.slots) {
-          const w = ' ' + norm(v) + ' ';
-          const c = all.filter((e) => (' ' + norm(e.innerText) + ' ').includes(w));
-          const pref = c.filter((e) => norm(e.innerText).includes('slot time'));
-          const pool = pref.length ? pref : c;
-          if (pool.length) {
-            el = pool.sort((x, y) => x.innerText.length - y.innerText.length)[0];
-            used = v;
-            break;
+      } else {
+        if (r['needTap'] == true) _tapAt(r);
+        _attempts++;
+        final max = _steps[_i].maxAttempts;
+        final m = (r['msg'] ?? '').toString();
+        setState(() {
+          _msg = m.isEmpty ? _steps[_i].hint : m;
+          if (max != null && _attempts >= max) {
+            _manual = true;
+            _msg = m.isEmpty ? _steps[_i].hint : '${_steps[_i].hint}\n($m)';
           }
-        }
-        if (!el) {
-          const seen = all
-            .map((e) => (e.innerText || '').trim())
-            .filter((s) => /^slot time/i.test(s) && s.length < 30)
-            .slice(0, 6)
-            .join(' | ');
-          return done(false, 'Slot ' + (a.slots[0] || '') + ' not found' + (seen ? ' (page shows: ' + seen + ')' : ''));
-        }
-        let card = el;
-        let radio = null;
-        for (let i = 0; i < 7 && card; i++) {
-          radio = card.querySelector(
-            'input[type=radio],mat-radio-button,[role=radio],.mat-radio-outer-circle,.mat-mdc-radio-button'
-          );
-          if (radio) break;
-          card = card.parentElement;
-        }
-        if (!card) card = el;
-        if (/\b(sold out|full|not available)\b/.test(norm(card.innerText)))
-          return done(false, 'That slot is full. Pick another slot.');
-        if (radio) {
-          if (radio.tagName === 'INPUT') radio.click();
-          else fireClick(radio);
-        } else {
-          fireClick(card);
-        }
-        await sleep(500);
-        const inp = card.querySelector('input[type=radio]');
-        if (inp && !inp.checked) {
-          fireClick(card);
-          await sleep(500);
-          if (!inp.checked) return done(false, 'Could not tick the slot, tap it yourself');
-        }
-        done(true, 'Slot ' + used + ' selected');
-      });
-    },
+        });
+      }
+    } finally {
+      _busy = false;
+    }
+  }
 
-    next() {
-      return run(async () => {
-        const onForm = () =>
-          present(['pilgrim details']) || (inputs(['name']).length > 0 && inputs(['age']).length > 0);
-        if (onForm()) return done(true, 'Pilgrim form is open');
-        const btns = [...document.querySelectorAll('button,[role=button],a')].filter(
-          (e) =>
-            vis(e) &&
-            !e.disabled &&
-            e.getAttribute('aria-disabled') !== 'true' &&
-            ['continue', 'proceed', 'next'].includes(norm(e.innerText))
-        );
-        if (!btns.length) return done(false, 'Waiting for the Continue button...');
-        const b = btns[btns.length - 1];
-        b.scrollIntoView({ block: 'center' });
-        b.click();
-        await sleep(1500);
-        done(onForm(), 'Clicked Continue');
-      });
-    },
+  void _addLog(String s) {
+    final t = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    _log.add('${two(t.hour)}:${two(t.minute)}:${two(t.second)} $s');
+    if (_log.length > 200) _log.removeAt(0);
+  }
 
-    devotees(a) {
-      return run(async () => {
-        const r = await fillDevotees(a.list);
-        if (r.n < 0) return done(false, 'Waiting for the devotee form...');
-        done(
-          r.n > 0 && r.fails.length === 0,
-          r.fails.length
-            ? 'Not filled: ' + r.fails.join(', ') + '. Fill these yourself.'
-            : 'Filled ' + r.n + ' of ' + a.list.length + ' devotees'
-        );
-      });
-    },
+  void _showLog() {
+    final text = _log.isEmpty ? 'Nothing logged yet.' : _log.join('\n');
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.8,
+          child: Column(
+            children: [
+              ListTile(
+                title: const Text('Log'),
+                subtitle: Text('Step ${_i + 1}: ${_steps[_i].label}'),
+                trailing: TextButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: text));
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('Log copied')));
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy'),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(text,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-    general(a) {
-      return run(async () => {
-        const r = await fillGeneral(a);
-        done(
-          r.n >= 3 && r.fails.length <= 1,
-          r.fails.length ? 'Not filled: ' + r.fails.join(', ') : 'General details filled'
-        );
-      });
-    },
+  Future<void> _probe(String label) async {
+    final r = await _exec('__ttd.probe()');
+    _addLog('$label: ${r['info'] ?? r['msg']}');
+  }
 
-    fillAll(a) {
-      return run(async () => {
-        const d = await fillDevotees(a.list);
-        const g = await fillGeneral(a.general);
-        const fails = d.fails.concat(g.fails);
-        done(
-          d.n > 0 || g.n > 0,
-          fails.length
-            ? 'Filled what I could. Not filled: ' + fails.join(', ')
-            : 'Filled devotees and general details'
-        );
-      });
-    },
-  };
-})();
-''';
+  /// Phone step: get the box ready, type the number with real key events, then let the
+  /// page script check it and press Get OTP.
+  Future<Map<String, dynamic>> _phoneStep() async {
+    _addLog('--- phone step ---');
+    final prep = await _exec('__ttd.prepPhone(${jsonEncode(_b.phone)})');
+    _addLog('prepare: ok=${prep['ok']} ${prep['msg'] ?? ''}');
+    if (prep['ok'] != true) return prep;
+    var how = 'already typed';
+    if (prep['ready'] == true) {
+      await _probe('before typing');
+      if (mounted) setState(() => _msg = 'Typing your number...');
+      final cdp = await Cdp.connect();
+      _addLog('real keys: ${Cdp.status}');
+      for (final t in Cdp.trace) {
+        _addLog('  $t');
+      }
+      if (cdp != null) {
+        try {
+          await cdp.typeDigits(_b.phone);
+          how = 'typed with real keys';
+        } catch (e) {
+          how = 'key typing failed: $e';
+        } finally {
+          cdp.close();
+        }
+        for (final t in Cdp.trace.skip(1)) {
+          _addLog('  $t');
+        }
+        _addLog('real keys result: $how');
+        await Future.delayed(const Duration(milliseconds: 700));
+        await _probe('after typing');
+      } else {
+        how = 'keys unavailable (${Cdp.status})';
+      }
+    }
+    final r = await _exec(_call(1));
+    _addLog('fill/click: ok=${r['ok']} ${r['msg'] ?? ''}');
+    await _probe('after fill');
+    if (r['ok'] != true) {
+      r['msg'] = '${r['msg'] ?? ''}  [$how]';
+    }
+    return r;
+  }
 
-const kAutomationJs = kJsHelpers + kJsSteps;
+  /// Taps the page where the page said (the phone box), so the page gets real focus.
+  void _tapAt(Map<String, dynamic> r) {
+    try {
+      final box = _webKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) return;
+      final iw = (r['iw'] as num).toDouble();
+      if (iw <= 0) return;
+      final k = box.size.width / iw;
+      final g = box.localToGlobal(
+          Offset((r['x'] as num).toDouble() * k, (r['y'] as num).toDouble() * k));
+      final id = _ptr++;
+      final t = WidgetsBinding.instance.currentSystemFrameTimeStamp;
+      final gb = GestureBinding.instance;
+      gb.handlePointerEvent(PointerDownEvent(
+          timeStamp: t, pointer: id, kind: PointerDeviceKind.touch, device: id, position: g));
+      Future.delayed(const Duration(milliseconds: 80), () {
+        gb.handlePointerEvent(PointerUpEvent(
+            timeStamp: t + const Duration(milliseconds: 80),
+            pointer: id,
+            kind: PointerDeviceKind.touch,
+            device: id,
+            position: g));
+      });
+    } catch (_) {}
+  }
+
+  void _advance({String? note}) {
+    if (_i >= _steps.length - 1) return;
+    setState(() {
+      _i++;
+      _attempts = 0;
+      _manual = false;
+      _msg = _i == _steps.length - 1
+          ? _steps[_i].hint
+          : ((note == null || note.isEmpty) ? _steps[_i].label : note);
+    });
+  }
+
+  Future<void> _autofill() async {
+    final args = jsonEncode({
+      'list': _b.devotees.map(_siteDevotee).toList(),
+      'general': _generalArgs,
+    });
+    final r = await _exec('__ttd.fillAll($args)');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text((r['msg'] ?? '').toString().isNotEmpty
+            ? r['msg'].toString()
+            : 'No matching fields on this page yet'),
+      ));
+  }
+
+  Future<void> _back() async {
+    if (await _c.canGoBack()) {
+      await _c.goBack();
+    } else if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
+  void _showSteps() {
+    showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Steps'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (var k = 0; k < _steps.length; k++)
+                ListTile(
+                  dense: true,
+                  leading: Icon(
+                    k < _i
+                        ? Icons.check_circle
+                        : (k == _i
+                            ? Icons.play_circle_fill
+                            : Icons.radio_button_unchecked),
+                    color: k < _i
+                        ? Colors.green.shade700
+                        : (k == _i ? kSaffron : Colors.black38),
+                  ),
+                  title: Text(_steps[k].label),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  // ---------- UI ----------
+
+  Widget _panel() {
+    final isOtp = _i == 2;
+    final last = _i == _steps.length - 1;
+    final status = last
+        ? 'Your turn'
+        : _paused
+            ? 'Paused'
+            : (_manual || isOtp)
+                ? 'Needs you'
+                : 'Working';
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: kLine)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Step ${_i + 1} of ${_steps.length}: ${_steps[_i].label}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, color: kMaroon),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAEEDA),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(status,
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFF633806))),
+                  ),
+                  Icon(_expanded ? Icons.expand_more : Icons.expand_less,
+                      color: kClay),
+                ],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(_msg,
+                maxLines: (_expanded || _manual) ? 6 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+            if (_expanded) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => setState(() => _paused = !_paused),
+                      icon: Icon(_paused ? Icons.play_arrow : Icons.pause),
+                      label: Text(_paused ? 'Resume' : 'Pause'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _autofill,
+                      icon: const Icon(Icons.auto_fix_high),
+                      label: const Text('Autofill page'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if ((_manual || isOtp) && !last) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (_manual) ...[
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() {
+                          _manual = false;
+                          _attempts = 0;
+                          _msg = 'Retrying...';
+                        }),
+                        child: const Text('Retry'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 46)),
+                      onPressed: () => _advance(),
+                      child: Text(isOtp ? "I've entered OTP" : 'Done, next'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: kMaroon,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back), onPressed: _back),
+        title: const Text('TTD booking'),
+        actions: [
+          IconButton(
+              tooltip: 'Log',
+              onPressed: _showLog,
+              icon: const Icon(Icons.bug_report_outlined)),
+          IconButton(
+              tooltip: 'Steps',
+              onPressed: _showSteps,
+              icon: const Icon(Icons.checklist)),
+          IconButton(
+              tooltip: 'Reload',
+              onPressed: () => _c.reload(),
+              icon: const Icon(Icons.refresh)),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_progress < 100)
+            LinearProgressIndicator(
+                value: _progress / 100, minHeight: 3, color: kSaffron),
+          Expanded(child: WebViewWidget(key: _webKey, controller: _c)),
+          _panel(),
+        ],
+      ),
+    );
+  }
+}
