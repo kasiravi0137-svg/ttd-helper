@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+//Ravi
+
 /// Types into the page with real key events through the WebView's own debugging
 /// socket (the app talks to its own WebView; nothing leaves the phone).
 /// Real key events are the one thing masked phone boxes always accept.
@@ -12,6 +14,9 @@ class Cdp {
 
   /// What happened the last time we tried to connect, for the on-screen note.
   static String status = '';
+
+  /// Short notes about every command sent (for the log screen).
+  static final List<String> trace = [];
 
   final Socket _socket;
   final Map<int, Completer<Map<String, dynamic>>> _waiting = {};
@@ -34,6 +39,7 @@ class Cdp {
   }
 
   static Future<Cdp?> connect() async {
+    trace.clear();
     try {
       final body = await _httpGet('/json');
       final a = body.indexOf('[');
@@ -57,6 +63,7 @@ class Cdp {
         status = 'no page target';
         return null;
       }
+      trace.add('target: ${pick['type']} ${pick['url']}');
       final path = Uri.parse(pick['webSocketDebuggerUrl'].toString()).path;
       final s = await Socket.connect(_addr, 0, timeout: const Duration(seconds: 3));
       final c = Cdp._(s);
@@ -160,6 +167,9 @@ class Cdp {
     return c.future.timeout(const Duration(seconds: 5), onTimeout: () {
       _waiting.remove(id);
       return {'error': 'timeout'};
+    }).then((m) {
+      if (m['error'] != null && trace.length < 40) trace.add('$method -> ${m['error']}');
+      return m;
     });
   }
 
