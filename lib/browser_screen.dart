@@ -67,6 +67,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   late final WebViewController _c;
   final GlobalKey _webKey = GlobalKey();
   int _ptr = 900;
+  final List<String> _log = [];
   Timer? _timer;
   Completer<Map<String, dynamic>>? _pending;
   String _helper = '';
@@ -113,6 +114,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final j = jsonDecode(m.message) as Map<String, dynamic>;
       final p = _pending;
       if (j['type'] == 'result' && p != null && !p.isCompleted) p.complete(j);
+      if (j['type'] == 'log') _addLog('page: ${j['msg']}');
       if (j['type'] == 'progress' && mounted && !_manual) {
         setState(() => _msg = (j['msg'] ?? '').toString());
       }
@@ -195,6 +197,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     try {
       final r = _i == 1 ? await _phoneStep() : await _exec(_call(_i));
       if (!mounted) return;
+      if (_i != 1) _addLog('step ${_i + 1} ${_steps[_i].label}: ok=${r['ok']} ${r['msg'] ?? ''}');
       if (r['ok'] == true) {
         if (r['skip'] == true && _i == 0) {
           // Already signed in: jump straight to Special Entry Darshan.
@@ -224,15 +227,72 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  void _addLog(String s) {
+    final t = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    _log.add('${two(t.hour)}:${two(t.minute)}:${two(t.second)} $s');
+    if (_log.length > 200) _log.removeAt(0);
+  }
+
+  void _showLog() {
+    final text = _log.isEmpty ? 'Nothing logged yet.' : _log.join('\n');
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.8,
+          child: Column(
+            children: [
+              ListTile(
+                title: const Text('Log'),
+                subtitle: Text('Step ${_i + 1}: ${_steps[_i].label}'),
+                trailing: TextButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: text));
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('Log copied')));
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy'),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(text,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _probe(String label) async {
+    final r = await _exec('__ttd.probe()');
+    _addLog('$label: ${r['info'] ?? r['msg']}');
+  }
+
   /// Phone step: get the box ready, type the number with real key events, then let the
   /// page script check it and press Get OTP.
   Future<Map<String, dynamic>> _phoneStep() async {
+    _addLog('--- phone step ---');
     final prep = await _exec('__ttd.prepPhone(${jsonEncode(_b.phone)})');
+    _addLog('prepare: ok=${prep['ok']} ${prep['msg'] ?? ''}');
     if (prep['ok'] != true) return prep;
     var how = 'already typed';
     if (prep['ready'] == true) {
+      await _probe('before typing');
       if (mounted) setState(() => _msg = 'Typing your number...');
       final cdp = await Cdp.connect();
+      _addLog('real keys: ${Cdp.status}');
+      for (final t in Cdp.trace) {
+        _addLog('  $t');
+      }
       if (cdp != null) {
         try {
           await cdp.typeDigits(_b.phone);
@@ -242,12 +302,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
         } finally {
           cdp.close();
         }
+        for (final t in Cdp.trace.skip(1)) {
+          _addLog('  $t');
+        }
+        _addLog('real keys result: $how');
         await Future.delayed(const Duration(milliseconds: 700));
+        await _probe('after typing');
       } else {
         how = 'keys unavailable (${Cdp.status})';
       }
     }
     final r = await _exec(_call(1));
+    _addLog('fill/click: ok=${r['ok']} ${r['msg'] ?? ''}');
+    await _probe('after fill');
     if (r['ok'] != true) {
       r['msg'] = '${r['msg'] ?? ''}  [$how]';
     }
@@ -474,6 +541,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
             icon: const Icon(Icons.arrow_back), onPressed: _back),
         title: const Text('TTD booking'),
         actions: [
+          IconButton(
+              tooltip: 'Log',
+              onPressed: _showLog,
+              icon: const Icon(Icons.bug_report_outlined)),
           IconButton(
               tooltip: 'Steps',
               onPressed: _showSteps,
