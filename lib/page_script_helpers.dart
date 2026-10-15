@@ -663,9 +663,16 @@ const kJsHelpers = r'''
 
   // The mobile number box, found by label, by type, or by where it sits above Get OTP.
   function phoneInput() {
-    let el = inputs(PHONE)[0];
+    // The TTD login box is two inputs: a small one holding "(+91)" and the real number box
+    // (max 10 digits). Never pick the "(+91)" one.
+    const isPrefix = (e) => /^\s*\(?\s*\+?\s*91\s*\)?\s*$/.test(e.value || '');
+    const all = deepAll('input,textarea').filter(
+      (e) => vis(e) && !SKIP.includes(e.type) && !isPrefix(e) && !e.readOnly && !e.disabled
+    );
+    let el = all.find((e) => e.maxLength === 10);
     if (el) return el;
-    const all = deepAll('input,textarea').filter((e) => vis(e) && !SKIP.includes(e.type));
+    el = inputs(PHONE).find((e) => all.includes(e));
+    if (el) return el;
     el = all.find(
       (e) =>
         e.type === 'tel' ||
