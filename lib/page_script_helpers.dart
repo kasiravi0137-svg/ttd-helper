@@ -361,6 +361,7 @@ const kJsHelpers = r'''
         el.focus();
         caretEnd();
         post({ type: 'progress', msg: 'Typing the number (method ' + k + '), box shows "' + el.value + '"' });
+        post({ type: 'log', msg: 'JS method ' + k + ' round ' + round + ': box shows "' + el.value + '"' });
         await methods[k]();
         await sleep(850);
         if (rest() === p) return { ok: true, how: k };
