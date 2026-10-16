@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  APP_NAME: TTD Helper
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,12 +35,32 @@ jobs:
             rm -rf test
           fi
 
-      - name: Patch Android manifest
+      - name: Patch Android manifest and app name
         run: |
           M=android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' "$M" || sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' "$M"
           grep -q 'allowBackup' "$M" || sed -i 's|<application|<application android:allowBackup="false"|' "$M"
-          sed -i 's|android:label="[^"]*"|android:label="TTD Helper"|' "$M"
+          sed -i "s|android:label=\"[^\"]*\"|android:label=\"$APP_NAME\"|" "$M"
+          grep -n 'android:label' "$M"
+
+      - name: App icon (from icon.png in the repo root)
+        run: |
+          if [ -f icon.png ]; then
+            CONV=$(command -v magick || command -v convert || true)
+            if [ -z "$CONV" ]; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+              CONV=convert
+            fi
+            R=android/app/src/main/res
+            for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+              d=${pair%%:*}; s=${pair##*:}
+              mkdir -p "$R/mipmap-$d"
+              $CONV icon.png -resize ${s}x${s} "$R/mipmap-$d/ic_launcher.png"
+            done
+            ls -la $R/mipmap-*/ic_launcher.png
+          else
+            echo "icon.png not found, keeping the default icon"
+          fi
 
       - run: flutter pub get
 
