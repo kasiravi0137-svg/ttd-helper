@@ -162,6 +162,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
         await Future.delayed(const Duration(milliseconds: 700));
         final sub = await _exec('__ttd.submitOtp()');
         _addLog('login: ok=${sub['ok']} ${sub['msg'] ?? ''}');
+        if (sub['ok'] == true) {
+          // Login pressed: once the OTP boxes are gone we are signed in, so go on by ourselves.
+          for (var k = 0; k < 10; k++) {
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+            final chk = await _exec('__ttd.prepOtp()');
+            if (chk['ok'] != true) {
+              _addLog('signed in, moving on');
+              if (_i == 2) _advance(note: 'Signed in');
+              break;
+            }
+          }
+        }
       } catch (e) {
         _addLog('otp typing failed: $e');
       } finally {
