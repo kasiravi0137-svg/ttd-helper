@@ -14,6 +14,13 @@ class SmsOtp {
     }
   }
 
+  /// Permission-free way: Android asks "share this OTP message with the app?" when it arrives.
+  static Future<void> startConsent() async {
+    try {
+      await _method.invokeMethod<void>('consent');
+    } catch (_) {}
+  }
+
   static Future<void> requestPermission() async {
     try {
       await _method.invokeMethod<void>('request');

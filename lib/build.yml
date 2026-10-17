@@ -59,6 +59,9 @@ jobs:
           import android.content.pm.PackageManager
           import android.os.Build
           import android.provider.Telephony
+          import com.google.android.gms.auth.api.phone.SmsRetriever
+          import com.google.android.gms.common.api.CommonStatusCodes
+          import com.google.android.gms.common.api.Status
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
           import io.flutter.plugin.common.EventChannel
@@ -67,6 +70,45 @@ jobs:
           class MainActivity : FlutterActivity() {
               private var sink: EventChannel.EventSink? = null
               private var receiver: BroadcastReceiver? = null
+
+              private var consentReceiver: BroadcastReceiver? = null
+
+              // Permission-free route: Google asks the user to share just the one OTP message.
+              private fun startConsent() {
+                  try {
+                      SmsRetriever.getClient(this).startSmsUserConsent(null)
+                      if (consentReceiver != null) return
+                      val r = object : BroadcastReceiver() {
+                          override fun onReceive(c: Context?, i: Intent?) {
+                              if (i == null || i.action != SmsRetriever.SMS_RETRIEVED_ACTION) return
+                              val ex = i.extras ?: return
+                              val st = ex.get(SmsRetriever.EXTRA_STATUS) as? Status ?: return
+                              if (st.statusCode == CommonStatusCodes.SUCCESS) {
+                                  val ci = ex.getParcelable<Intent>(SmsRetriever.EXTRA_CONSENT_INTENT)
+                                  if (ci != null) {
+                                      try { startActivityForResult(ci, 88) } catch (e: Exception) {}
+                                  }
+                              }
+                          }
+                      }
+                      val f = IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION)
+                      if (Build.VERSION.SDK_INT >= 33) {
+                          registerReceiver(r, f, SmsRetriever.SEND_PERMISSION, null, Context.RECEIVER_EXPORTED)
+                      } else {
+                          registerReceiver(r, f, SmsRetriever.SEND_PERMISSION, null)
+                      }
+                      consentReceiver = r
+                  } catch (e: Exception) {
+                  }
+              }
+
+              override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+                  super.onActivityResult(req, res, data)
+                  if (req == 88 && res == RESULT_OK && data != null) {
+                      val m = data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE)
+                      if (m != null) sink?.success(m)
+                  }
+              }
 
               private fun allowed() =
                   checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
@@ -93,6 +135,10 @@ jobs:
                   MethodChannel(bm, "ttd/sms").setMethodCallHandler { call, result ->
                       when (call.method) {
                           "hasPermission" -> result.success(allowed())
+                          "consent" -> {
+                              startConsent()
+                              result.success(null)
+                          }
                           "request" -> {
                               requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 77)
                               result.success(null)
@@ -117,6 +163,8 @@ jobs:
               }
 
               override fun onDestroy() {
+                  consentReceiver?.let { unregisterReceiver(it) }
+                  consentReceiver = null
                   receiver?.let { unregisterReceiver(it) }
                   receiver = null
                   super.onDestroy()
@@ -124,6 +172,17 @@ jobs:
           }
           EOF
           head -5 "$F"
+          for G in android/app/build.gradle.kts android/app/build.gradle; do
+            if [ -f "$G" ]; then
+              if [[ "$G" == *.kts ]]; then
+                printf '\ndependencies {\n    implementation("com.google.android.gms:play-services-auth-api-phone:18.1.0")\n}\n' >> "$G"
+              else
+                printf "\ndependencies {\n    implementation 'com.google.android.gms:play-services-auth-api-phone:18.1.0'\n}\n" >> "$G"
+              fi
+              tail -4 "$G"
+              break
+            fi
+          done
 
       - name: App icon (from icon.png in the repo root)
         run: |

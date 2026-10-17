@@ -129,6 +129,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final c = SmsOtp.extract(b);
       if (c != null) _onSmsCode(c);
     }, onError: (_) {});
+    SmsOtp.startConsent();
     _addLog('sms: listening');
   }
 
@@ -371,6 +372,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         how = 'keys unavailable (${Cdp.status})';
       }
     }
+    SmsOtp.startConsent();
     final r = await _exec(_call(1));
     _addLog('fill/click: ok=${r['ok']} ${r['msg'] ?? ''}');
     await _probe('after fill');
