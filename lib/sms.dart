@@ -20,19 +20,14 @@ class SmsOtp {
     } catch (_) {}
   }
 
-  /// Emits the 6 digit code of every incoming SMS that looks like an OTP message.
-  static Stream<String> codes() {
-    return _events
-        .receiveBroadcastStream()
-        .map((e) => extract(e.toString()))
-        .where((c) => c != null)
-        .cast<String>();
+  /// Emits the text of every incoming SMS.
+  static Stream<String> bodies() {
+    return _events.receiveBroadcastStream().map((e) => e.toString());
   }
 
   static String? extract(String body) {
     final low = body.toLowerCase();
-    if (!low.contains('otp') && !low.contains('ttd') && !low.contains('devasthan')) return null;
-    final m = RegExp(r'(?<!\d)(\d{6})(?!\d)').firstMatch(body);
+        final m = RegExp(r'(?<!\d)(\d{6})(?!\d)').firstMatch(body);
     return m?.group(1);
   }
 }

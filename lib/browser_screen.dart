@@ -116,14 +116,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _startSms() async {
-    if (!await SmsOtp.hasPermission()) await SmsOtp.requestPermission();
-    _sms = SmsOtp.codes().listen(_onSmsCode, onError: (_) {});
+    var ok = await SmsOtp.hasPermission();
+    if (!ok) {
+      await SmsOtp.requestPermission();
+      await Future.delayed(const Duration(seconds: 6));
+      ok = await SmsOtp.hasPermission();
+    }
+    _addLog('sms: permission ${ok ? 'granted' : 'NOT granted'}');
+    _sms = SmsOtp.bodies().listen((b) {
+      final masked = b.replaceAll(RegExp(r'\d'), '#').replaceAll('\n', ' ');
+      _addLog('sms: got "${masked.length > 70 ? masked.substring(0, 70) : masked}"');
+      final c = SmsOtp.extract(b);
+      if (c != null) _onSmsCode(c);
+    }, onError: (_) {});
     _addLog('sms: listening');
   }
 
   /// A new OTP arrived by SMS: type it into the OTP boxes.
   Future<void> _onSmsCode(String code) async {
-    _addLog('sms: code received');
+    _addLog('sms: code found');
     if (code == _lastOtp) return;
     for (var w = 0; w < 20 && (_busy || _i != 2); w++) {
       await Future.delayed(const Duration(milliseconds: 500));
