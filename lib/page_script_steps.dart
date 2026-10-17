@@ -121,6 +121,24 @@ const kJsSteps = r'''
       });
     },
 
+    // Presses the Login button on the OTP dialog once the code is typed.
+    submitOtp() {
+      return run(async () => {
+        for (let i = 0; i < 12; i++) {
+          const m = [...document.querySelectorAll('button,[role=button]')].filter(
+            (e) => vis(e) && norm(e.innerText) === 'login');
+          const b = m[m.length - 1];
+          if (b && !isDisabled(b)) {
+            fireClick(b);
+            await sleep(600);
+            return done(true, 'Login pressed');
+          }
+          await sleep(300);
+        }
+        done(false, 'Login button not ready');
+      });
+    },
+
     fillPhone(p) {
       return run(async () => {
         let el = phoneInput();

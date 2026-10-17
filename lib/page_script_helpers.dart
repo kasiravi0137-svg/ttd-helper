@@ -769,12 +769,17 @@ const kJsHelpers = r'''
     e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : '');
 
   function otpVisible() {
-    return [...document.querySelectorAll('input,button,label,span,div,p,h1,h2,h3')].some((e) => {
-      if (!vis(e)) return false;
-      const t = e.tagName === 'INPUT' ? labelOf(e) : e.innerText;
+    // Cheap checks first (no layout work); only the few matches are tested for visibility.
+    const all = document.querySelectorAll('input,button,label,span,div,p,h1,h2,h3');
+    for (let k = 0; k < all.length; k++) {
+      const e = all[k];
+      if (e.tagName !== 'INPUT' && e.childElementCount > 3) continue;
+      const t = e.tagName === 'INPUT' ? labelOf(e) : e.textContent;
+      if (!t || t.length > 80) continue;
       const n = norm(t);
-      return n && n.length < 80 && (' ' + n + ' ').includes(' otp ');
-    });
+      if (n && (' ' + n + ' ').includes(' otp ') && vis(e)) return true;
+    }
+    return false;
   }
 
   // ---------- calendar ----------

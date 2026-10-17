@@ -105,7 +105,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         },
       ))
       ..loadRequest(Uri.parse(kTtdUrl));
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _tick());
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _tick());
   }
 
   @override
@@ -159,6 +159,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         await cdp.typeDigits(code);
         _lastOtp = code;
         _addLog('otp typed');
+        await Future.delayed(const Duration(milliseconds: 700));
+        final sub = await _exec('__ttd.submitOtp()');
+        _addLog('login: ok=${sub['ok']} ${sub['msg'] ?? ''}');
       } catch (e) {
         _addLog('otp typing failed: $e');
       } finally {
