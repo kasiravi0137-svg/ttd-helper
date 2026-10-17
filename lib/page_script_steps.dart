@@ -102,6 +102,25 @@ const kJsSteps = r'''
       });
     },
 
+    // Finds the first OTP box so the app can tap it and type the code from the SMS.
+    prepOtp() {
+      return run(async () => {
+        const boxes = [...document.querySelectorAll('input')].filter(
+          (e) => vis(e) && e.maxLength === 1 && /^(tel|text|number)$/i.test(e.type || 'text'));
+        if (boxes.length < 4) return done(false, 'OTP boxes not visible');
+        const el = boxes[0];
+        el.scrollIntoView({ block: 'center' });
+        await sleep(200);
+        const rc = el.getBoundingClientRect();
+        done(true, 'ready', {
+          count: boxes.length,
+          x: rc.left + rc.width / 2,
+          y: rc.top + rc.height / 2,
+          iw: window.innerWidth,
+        });
+      });
+    },
+
     fillPhone(p) {
       return run(async () => {
         let el = phoneInput();
@@ -189,7 +208,22 @@ const kJsSteps = r'''
     pickDate(a) {
       return run(async () => {
         const ok = await gotoMonth(a.year, a.month - 1);
-        if (!ok) return done(false, 'Could not reach that month on the calendar');
+        if (!ok) {
+          const hh = calHeader();
+          let ctx = '';
+          if (hh) {
+            let c = hh;
+            for (let i = 0; i < 3 && c.parentElement; i++) c = c.parentElement;
+            ctx = (c.innerText || '').replace(/\s+/g, ' ').slice(0, 160);
+          }
+          post({ type: 'log', msg: 'calendar text: ' + ctx });
+          return done(
+            false,
+            'Calendar shows ' + (hh ? '"' + hh.innerText.trim() + '"' : 'no month') +
+              ', but your date is ' + MONTHS[a.month - 1] + ' ' + a.year +
+              '. If that month is not on the calendar, change the date in the app.'
+          );
+        }
         const hdr = calHeader();
         const top = hdr ? hdr.getBoundingClientRect().bottom : 0;
         const day = String(a.day);

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'cdp.dart';
+import 'sms.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'page_script_steps.dart';
@@ -70,6 +71,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   int _ptr = 900;
   final List<String> _log = [];
   Timer? _timer;
+  StreamSubscription<String>? _sms;
+  String? _lastOtp;
   Completer<Map<String, dynamic>>? _pending;
   String _helper = '';
 
@@ -91,6 +94,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (Platform.isAndroid) {
       // Lets the app type into the page with real key events (see cdp.dart).
       AndroidWebViewController.enableDebugging(true).catchError((_) {});
+      _startSms();
     }
     _c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -107,7 +111,50 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _sms?.cancel();
     super.dispose();
+  }
+
+  Future<void> _startSms() async {
+    if (!await SmsOtp.hasPermission()) await SmsOtp.requestPermission();
+    _sms = SmsOtp.codes().listen(_onSmsCode, onError: (_) {});
+    _addLog('sms: listening');
+  }
+
+  /// A new OTP arrived by SMS: type it into the OTP boxes.
+  Future<void> _onSmsCode(String code) async {
+    _addLog('sms: code received');
+    if (code == _lastOtp) return;
+    for (var w = 0; w < 20 && (_busy || _i != 2); w++) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+    }
+    if (!mounted || _i != 2) return;
+    _busy = true;
+    try {
+      final prep = await _exec('__ttd.prepOtp()');
+      _addLog('otp boxes: ok=${prep['ok']} ${prep['msg'] ?? ''}');
+      if (prep['ok'] != true) return;
+      setState(() => _msg = 'Typing the OTP from your SMS...');
+      _tapAt(prep);
+      await Future.delayed(const Duration(milliseconds: 600));
+      final cdp = await Cdp.connect();
+      if (cdp == null) {
+        _addLog('otp keys unavailable (${Cdp.status})');
+        return;
+      }
+      try {
+        await cdp.typeDigits(code);
+        _lastOtp = code;
+        _addLog('otp typed');
+      } catch (e) {
+        _addLog('otp typing failed: $e');
+      } finally {
+        cdp.close();
+      }
+    } finally {
+      _busy = false;
+    }
   }
 
   void _onMessage(JavaScriptMessage m) {
