@@ -182,6 +182,20 @@ const kJsSteps = r'''
         if (dlg.length || phoneInput() || otpVisible()) {
           state.sawDialog = true;
           state.gone = 0;
+          // Number is typed but the OTP boxes never appeared: press Get OTP again.
+          const boxes = [...document.querySelectorAll('input')].filter((e) => vis(e) && e.maxLength === 1);
+          const gb = getOtpButton();
+          if (boxes.length < 4 && gb && !isDisabled(gb)) {
+            state.noBoxes = (state.noBoxes || 0) + 1;
+            if (state.noBoxes >= 3 && (state.reclicks || 0) < 3) {
+              state.noBoxes = 0;
+              state.reclicks = (state.reclicks || 0) + 1;
+              fireClick(gb);
+              return done(false, 'Pressed Get OTP again (' + state.reclicks + ')');
+            }
+          } else {
+            state.noBoxes = 0;
+          }
           return done(false, '');
         }
         const ic = headerIcon();
