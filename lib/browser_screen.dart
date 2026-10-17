@@ -105,7 +105,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         },
       ))
       ..loadRequest(Uri.parse(kTtdUrl));
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _tick());
+    _timer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _tick());
   }
 
   @override
@@ -149,7 +149,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (prep['ok'] != true) return;
       setState(() => _msg = 'Typing the OTP from your SMS...');
       _tapAt(prep);
-      await Future.delayed(const Duration(milliseconds: 600));
+      await Future.delayed(const Duration(milliseconds: 300));
       final cdp = await Cdp.connect();
       if (cdp == null) {
         _addLog('otp keys unavailable (${Cdp.status})');
@@ -159,13 +159,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
         await cdp.typeDigits(code);
         _lastOtp = code;
         _addLog('otp typed');
-        await Future.delayed(const Duration(milliseconds: 700));
+        await Future.delayed(const Duration(milliseconds: 250));
         final sub = await _exec('__ttd.submitOtp()');
         _addLog('login: ok=${sub['ok']} ${sub['msg'] ?? ''}');
         if (sub['ok'] == true) {
           // Login pressed: once the OTP boxes are gone we are signed in, so go on by ourselves.
-          for (var k = 0; k < 10; k++) {
-            await Future.delayed(const Duration(seconds: 1));
+          for (var k = 0; k < 24; k++) {
+            await Future.delayed(const Duration(milliseconds: 400));
             if (!mounted) return;
             final chk = await _exec('__ttd.prepOtp()');
             if (chk['ok'] != true) {
@@ -292,7 +292,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         final m = (r['msg'] ?? '').toString();
         setState(() {
           _msg = m.isEmpty ? _steps[_i].hint : m;
-          if (max != null && _attempts >= max) {
+          if (max != null && _attempts >= max * 2) {
             _manual = true;
             _msg = m.isEmpty ? _steps[_i].hint : '${_steps[_i].hint}\n($m)';
           }
@@ -362,7 +362,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (prep['ok'] != true) return prep;
     var how = 'already typed';
     if (prep['ready'] == true) {
-      await _probe('before typing');
       if (mounted) setState(() => _msg = 'Typing your number...');
       final cdp = await Cdp.connect();
       _addLog('real keys: ${Cdp.status}');
@@ -382,8 +381,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _addLog('  $t');
         }
         _addLog('real keys result: $how');
-        await Future.delayed(const Duration(milliseconds: 700));
-        await _probe('after typing');
+        await Future.delayed(const Duration(milliseconds: 250));
       } else {
         how = 'keys unavailable (${Cdp.status})';
       }
@@ -391,8 +389,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _addLog('sms: consent ${await SmsOtp.startConsent()}');
     final r = await _exec(_call(1));
     _addLog('fill/click: ok=${r['ok']} ${r['msg'] ?? ''}');
-    await _probe('after fill');
     if (r['ok'] != true) {
+      await _probe('after failed fill');
       r['msg'] = '${r['msg'] ?? ''}  [$how]';
     }
     return r;
@@ -434,6 +432,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ? _steps[_i].hint
           : ((note == null || note.isEmpty) ? _steps[_i].label : note);
     });
+    // Do not wait for the next timer tick: start the next step right away.
+    Future.delayed(const Duration(milliseconds: 300), _tick);
   }
 
   Future<void> _autofill() async {

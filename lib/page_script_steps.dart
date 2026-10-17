@@ -178,7 +178,7 @@ const kJsSteps = r'''
           ok = r.ok;
           how = r.how;
         }
-        await sleep(700);
+        await sleep(250);
         if (!ok) return done(false, 'Could not type the number (box shows "' + (el.value || '') + '") ' + how);
         let btn = getOtpButton();
         if (btn && isDisabled(btn)) {
@@ -189,7 +189,7 @@ const kJsSteps = r'''
         if (!btn) return done(true, 'Phone filled, tap Get OTP');
         if (isDisabled(btn)) return done(false, 'Number typed but Get OTP is still disabled');
         fireClick(btn);
-        await sleep(1000);
+        await sleep(500);
         done(true, 'Phone filled, OTP requested');
       });
     },

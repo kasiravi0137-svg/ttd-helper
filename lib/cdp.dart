@@ -226,7 +226,7 @@ class Cdp {
         'windowsVirtualKeyCode': vk,
         'nativeVirtualKeyCode': vk,
       });
-      await Future.delayed(const Duration(milliseconds: 90));
+      await Future.delayed(const Duration(milliseconds: 45));
     }
   }
 
