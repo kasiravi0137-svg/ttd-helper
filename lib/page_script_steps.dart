@@ -121,6 +121,15 @@ const kJsSteps = r'''
       });
     },
 
+    // True while TTD shows its "virtual queue" / waiting-room page.
+    inQueue() {
+      return run(async () => {
+        const t = ((document.body && document.body.innerText) || '').toLowerCase();
+        const q = t.includes('virtual queue') || t.includes('placed in a queue') || t.includes('waiting room');
+        done(q, q ? 'TTD virtual queue: waiting your turn' : '');
+      });
+    },
+
     // Presses the Login button on the OTP dialog once the code is typed.
     submitOtp() {
       return run(async () => {

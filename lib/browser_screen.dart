@@ -287,6 +287,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
         }
       } else {
         if (r['needTap'] == true) _tapAt(r);
+        // In TTD's virtual queue the site decides when to let us in: keep waiting, do not give up.
+        if (_i >= 3) {
+          final q = await _exec('__ttd.inQueue()');
+          if (q['ok'] == true) {
+            if (mounted) setState(() => _msg = (q['msg'] ?? '').toString());
+            return;
+          }
+        }
         _attempts++;
         final max = _steps[_i].maxAttempts;
         final m = (r['msg'] ?? '').toString();
