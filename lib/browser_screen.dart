@@ -57,7 +57,7 @@ const _specialSteps = [
       'Check everything, tap Continue yourself, then do captcha and payment.'),
 ];
 
-// Arjitha Seva: the first 3 steps (login, phone, OTP) are the same; the date is tapped by the user.
+// Arjitha Seva: the first 3 steps (login, phone, OTP) are the same as Special Entry.
 const _arjithaSteps = [
   _Step('Open login',
       'Tap the login icon (top right) yourself, then tap Done, next.',
@@ -74,12 +74,12 @@ const _arjithaSteps = [
   _Step('Select seva',
       'Choose the seva in the Select Seva box yourself, then tap Done, next.',
       maxAttempts: 6),
-  _Step('Pick date (you)',
-      'Tap your date on the calendar. The app continues when the seva list appears.',
-      maxAttempts: null),
+  _Step('Pick date',
+      'Tap your date on the calendar yourself, then tap Done, next.',
+      maxAttempts: 5),
   _Step('Seva time and tickets',
       'Choose the seva time and number of tickets yourself, then tap Done, next.',
-      maxAttempts: 6),
+      maxAttempts: 10),
   _Step('General details',
       'Fill email, city, state and pincode yourself, then tap Done, next.',
       maxAttempts: 3),
@@ -282,7 +282,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         case 4:
           return '__ttd.selectSeva(${jsonEncode({'seva': _b.seva})})';
         case 5:
-          return '__ttd.sevaCards()';
+          return '__ttd.pickDate(${jsonEncode(_dateArgs)})';
         case 6:
           return '__ttd.sevaPick(${jsonEncode({
                 'seva': _b.seva,

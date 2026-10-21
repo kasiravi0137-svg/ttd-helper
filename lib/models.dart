@@ -143,6 +143,7 @@ class Booking {
     if (service == kServiceArjitha) {
       if (phone.length != 10) m.add('phone number');
       if (seva.trim().isEmpty) m.add('seva');
+      if (date == null) m.add('date');
       if (devotees.isEmpty) m.add('devotees');
       return m;
     }

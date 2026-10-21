@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'Tirumala Arjitha Seva'
                 : 'Tirumala special entry darshan',
             subtitle: _b.service == kServiceArjitha
-                ? 'Pick the date yourself on the TTD page'
+                ? 'Sevas at Srivari Temple, Tirumala'
                 : 'Rs 300 per devotee',
           ),
           Expanded(
@@ -179,6 +179,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               _row('Phone',
                                   _b.phone.isEmpty ? '-' : '+91 ${_b.phone}'),
                               if (_b.service == kServiceArjitha) ...[
+                                _row('Date',
+                                    _b.date == null ? '-' : fmtDate(_b.date!)),
                                 _row('Time',
                                     _b.slot.isEmpty ? 'Most available' : _b.slot),
                                 _row('Devotees', devNames),

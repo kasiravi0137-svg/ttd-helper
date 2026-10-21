@@ -126,8 +126,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
   Future<void> _save() async {
     if (_service == kServiceArjitha) {
       final okForm = _form.currentState!.validate();
-      setState(() => _sevaError = _seva == null);
-      if (!okForm || _seva == null) {
+      setState(() {
+        _sevaError = _seva == null;
+        _dateError = _date == null;
+      });
+      if (!okForm || _seva == null || _date == null) {
         _snack('Fix the highlighted fields');
         return;
       }
@@ -316,7 +319,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                   border: Border.all(color: kLine),
                 ),
                 child: const Text(
-                    'Temple: Srivari Temple-Tirumala\nYou pick the date on the TTD page yourself.'),
+                    'Temple: Srivari Temple-Tirumala'),
               ),
               const SizedBox(height: 12),
               InputDecorator(
@@ -350,6 +353,19 @@ class _DetailsScreenState extends State<DetailsScreen> {
                   validator: (v) => _required(v, 'the seva name'),
                 ),
               ],
+              const SizedBox(height: 12),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _pickDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Seva date',
+                    suffixIcon: const Icon(Icons.calendar_today_outlined),
+                    errorText: _dateError ? 'Pick a date' : null,
+                  ),
+                  child: Text(_date == null ? 'Select date' : fmtDate(_date!)),
+                ),
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _slot,
