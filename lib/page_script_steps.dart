@@ -160,12 +160,13 @@ const kJsSteps = r'''
         // Anything that looks like one list entry just below the box.
         const listItems = () => {
           const r = ctl.getBoundingClientRect();
-          return [...document.querySelectorAll('mat-option,[role=option],li,div,span,p,a,button')].filter((e) => {
-            if (!vis(e) || ctl.contains(e) || e.childElementCount > 1) return false;
-            const t = (e.innerText || '').trim();
+          // deepAll also looks inside shadow roots (the list can live in an overlay component).
+          return deepAll('mat-option,[role=option],li,div,span,p,a,button').filter((e) => {
+            if (!vis(e) || ctl.contains(e) || e.childElementCount > 3) return false;
+            const t = (e.innerText || e.textContent || '').trim();
             if (t.length < 2 || t.length > 40) return false;
             const q = e.getBoundingClientRect();
-            return q.top >= r.bottom - 10 && q.top <= r.bottom + 520;
+            return q.top >= r.top && q.top <= r.bottom + 700;
           });
         };
         const pick = () => {
@@ -198,8 +199,17 @@ const kJsSteps = r'''
           });
         }
         if (!opt) {
-          const seen = [...new Set(listItems().map((e) => (e.innerText || '').trim()))].slice(0, 12).join(' | ');
+          const seen = [...new Set(listItems().map((e) => (e.innerText || e.textContent || '').trim()))].slice(0, 14).join(' | ');
           post({ type: 'log', msg: 'seva list shows: ' + seen });
+          // Where does the wanted text live? (for diagnosis)
+          const where = deepAll('*')
+            .filter((e) => (e.textContent || '').trim().toLowerCase() === String(a.seva).trim().toLowerCase())
+            .slice(0, 4)
+            .map((e) => e.tagName.toLowerCase() + '.' + String(e.className || '').split(' ')[0] +
+              (vis(e) ? '' : '(hidden)') + ' top=' + Math.round(e.getBoundingClientRect().top) +
+              ' kids=' + e.childElementCount)
+            .join(' ; ');
+          post({ type: 'log', msg: 'seva text found in: ' + (where || 'nowhere') });
           return done(
             false,
             seen
