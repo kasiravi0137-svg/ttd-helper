@@ -278,9 +278,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         if (r['skip'] == true && _i == 0) {
           // Already signed in: jump straight to Special Entry Darshan.
           setState(() {
-            _i = 3;
+            _i = (r['jump'] as num?)?.toInt() ?? 3;
             _attempts = 0;
-            _msg = 'Already signed in';
+            _msg = (r['msg'] ?? 'Already signed in').toString();
           });
         } else {
           _advance(note: r['msg']?.toString());

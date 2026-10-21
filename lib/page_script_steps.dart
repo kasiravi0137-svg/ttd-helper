@@ -9,6 +9,10 @@ const kJsSteps = r'''
 
     openLogin() {
       return run(async () => {
+        // Already past the login (calendar page is open): carry on from "Pick date".
+        if (!loginOpen() && calHeader()) {
+          return done(true, 'Already on the booking page', { skip: true, jump: 4 });
+        }
         if (loginOpen()) return done(true, 'Login box is open');
         window.scrollTo(0, 0);
         await sleep(300);

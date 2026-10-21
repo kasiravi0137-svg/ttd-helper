@@ -669,6 +669,9 @@ const kJsHelpers = r'''
     const all = deepAll('input,textarea').filter(
       (e) => vis(e) && !SKIP.includes(e.type) && !isPrefix(e) && !e.readOnly && !e.disabled
     );
+    // Only inside the login box (it has Get OTP or the "(+91)" box). On any other page
+    // (booking form, calendar...) there is no phone box, so never type the number there.
+    if (!getOtpButton() && !deepAll('input').some((e) => vis(e) && isPrefix(e))) return null;
     let el = all.find((e) => e.maxLength === 10);
     if (el) return el;
     el = inputs(PHONE).find((e) => all.includes(e));
