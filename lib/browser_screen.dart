@@ -22,7 +22,7 @@ class _Step {
   final int? maxAttempts; // null = keep waiting
 }
 
-const _steps = [
+const _specialSteps = [
   _Step('Open login',
       'Tap the login icon (top right) yourself, then tap Done, next.',
       maxAttempts: 4),
@@ -57,6 +57,42 @@ const _steps = [
       'Check everything, tap Continue yourself, then do captcha and payment.'),
 ];
 
+// Arjitha Seva: the first 3 steps (login, phone, OTP) are the same; the date is tapped by the user.
+const _arjithaSteps = [
+  _Step('Open login',
+      'Tap the login icon (top right) yourself, then tap Done, next.',
+      maxAttempts: 4),
+  _Step('Phone and OTP request',
+      'Type your phone number and tap Get OTP yourself, then tap Done, next.',
+      maxAttempts: 12),
+  _Step('Enter OTP',
+      'Type the OTP on the page. The app continues when you are signed in.',
+      maxAttempts: null),
+  _Step('Arjitha Seva tile',
+      'Tap the Arjitha Sevas tile yourself, then tap Done, next.',
+      maxAttempts: 10),
+  _Step('Select seva',
+      'Choose the seva in the Select Seva box yourself, then tap Done, next.',
+      maxAttempts: 6),
+  _Step('Pick date (you)',
+      'Tap your date on the calendar. The app continues when the seva list appears.',
+      maxAttempts: null),
+  _Step('Seva time and tickets',
+      'Choose the seva time and number of tickets yourself, then tap Done, next.',
+      maxAttempts: 6),
+  _Step('General details',
+      'Fill email, city, state and pincode yourself, then tap Done, next.',
+      maxAttempts: 3),
+  _Step('Pilgrim details',
+      'Fill the pilgrim fields yourself, then tap Done, next.',
+      maxAttempts: 3),
+  _Step('Continue',
+      'Tap Continue yourself, then tap Done, next.',
+      maxAttempts: 6),
+  _Step('Check and pay',
+      'Check everything, then do captcha and payment yourself.'),
+];
+
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key, required this.booking});
   final Booking booking;
@@ -86,6 +122,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _msg = 'Loading the TTD site...';
 
   Booking get _b => widget.booking;
+  List<_Step> get _steps =>
+      _b.service == kServiceArjitha ? _arjithaSteps : _specialSteps;
 
   @override
   void initState() {
@@ -237,6 +275,31 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   String _call(int i) {
+    if (_b.service == kServiceArjitha && i >= 3) {
+      switch (i) {
+        case 3:
+          return '__ttd.click(${jsonEncode(['arjitha sevas', 'arjitha seva'])}, true)';
+        case 4:
+          return '__ttd.selectSeva(${jsonEncode({'seva': _b.seva})})';
+        case 5:
+          return '__ttd.sevaCards()';
+        case 6:
+          return '__ttd.sevaPick(${jsonEncode({
+                'seva': _b.seva,
+                'slots': slotVariants(_b.slot),
+                'count': _b.devotees.length,
+              })})';
+        case 7:
+          return '__ttd.general(${jsonEncode(_generalArgs)})';
+        case 8:
+          return '__ttd.devotees(${jsonEncode({
+                'list': _b.devotees.map(_siteDevotee).toList()
+              })})';
+        case 9:
+          return '__ttd.goContinue()';
+      }
+      return '';
+    }
     switch (i) {
       case 0:
         return '__ttd.openLogin()';
@@ -278,7 +341,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         if (r['skip'] == true && _i == 0) {
           // Already signed in: jump straight to Special Entry Darshan.
           setState(() {
-            _i = (r['jump'] as num?)?.toInt() ?? 3;
+            final j = (r['jump'] as num?)?.toInt() ?? 3;
+            // The calendar page is step 5 in the Arjitha Seva flow (step 4 in Special Entry).
+            _i = (_b.service == kServiceArjitha && j == 4) ? 5 : j;
             _attempts = 0;
             _msg = (r['msg'] ?? 'Already signed in').toString();
           });

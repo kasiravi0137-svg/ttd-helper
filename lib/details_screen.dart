@@ -18,6 +18,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _slot;
   late String _service;
+  String? _seva; // a kSevas entry or kSevaOther
+  final _sevaOther = TextEditingController();
+  bool _sevaError = false;
   DateTime? _date;
   bool _dateError = false;
   late List<Devotee> _devotees;
@@ -28,6 +31,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
     final b = widget.initial;
     _slot = TextEditingController(text: b.slot);
     _service = b.service;
+    if (kSevas.contains(b.seva)) {
+      _seva = b.seva;
+    } else if (b.seva.isNotEmpty) {
+      _seva = kSevaOther;
+      _sevaOther.text = b.seva;
+    }
     _date = b.date;
     _devotees = b.devotees.map((d) => d.copy()).toList();
   }
@@ -35,6 +44,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   @override
   void dispose() {
     _slot.dispose();
+    _sevaOther.dispose();
     super.dispose();
   }
 
@@ -114,12 +124,22 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   Future<void> _save() async {
-    if (_service != kServiceSpecial) {
-      // Arjitha Seva: its own flow comes later; keep the Special Entry details as they are.
+    if (_service == kServiceArjitha) {
+      final okForm = _form.currentState!.validate();
+      setState(() => _sevaError = _seva == null);
+      if (!okForm || _seva == null) {
+        _snack('Fix the highlighted fields');
+        return;
+      }
+      if (_devotees.isEmpty) {
+        _snack('Add at least one devotee');
+        return;
+      }
       await Store.save(Booking(
         service: _service,
-        date: _date,
+        seva: _sevaName,
         slot: _slot.text.trim(),
+        date: _date,
         devotees: _devotees,
       ));
       if (!mounted) return;
@@ -138,6 +158,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
     final b = Booking(
       service: _service,
+      seva: _sevaName,
       date: _date,
       slot: _slot.text.trim(),
       devotees: _devotees,
@@ -146,6 +167,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
     if (!mounted) return;
     Navigator.pop(context, true);
   }
+
+  String get _sevaName =>
+      _seva == null ? '' : (_seva == kSevaOther ? _sevaOther.text.trim() : _seva!);
 
   String? _required(String? v, String what) =>
       (v == null || v.trim().isEmpty) ? 'Enter $what' : null;
@@ -225,21 +249,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ),
               ),
             ),
-            if (_service != kServiceSpecial) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFAEEDA),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: kLine),
-                ),
-                child: const Text(
-                  'Arjitha Seva booking is coming soon. Save this choice now; the date, '
-                  'devotee and ticket steps for Arjitha Seva will be added in the next update.',
-                ),
-              ),
-            ],
             const SectionTitle('Login and contact'),
             Container(
               padding: const EdgeInsets.all(14),
@@ -296,11 +305,67 @@ class _DetailsScreenState extends State<DetailsScreen> {
                   ),
               ],
             ),
+            ],
+            if (_service == kServiceArjitha) ...[
+              const SectionTitle('Arjitha Seva'),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: kCream,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: kLine),
+                ),
+                child: const Text(
+                    'Temple: Srivari Temple-Tirumala\nYou pick the date on the TTD page yourself.'),
+              ),
+              const SizedBox(height: 12),
+              InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Select Seva',
+                  errorText: _sevaError ? 'Pick a seva' : null,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _seva,
+                    hint: const Text('Select seva'),
+                    isExpanded: true,
+                    borderRadius: BorderRadius.circular(12),
+                    items: [
+                      for (final v in [...kSevas, kSevaOther])
+                        DropdownMenuItem(value: v, child: Text(v)),
+                    ],
+                    onChanged: (v) => setState(() {
+                      _seva = v;
+                      _sevaError = false;
+                    }),
+                  ),
+                ),
+              ),
+              if (_seva == kSevaOther) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _sevaOther,
+                  decoration: const InputDecoration(
+                      labelText: 'Seva name (as shown on the TTD page)'),
+                  validator: (v) => _required(v, 'the seva name'),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _slot,
+                decoration: const InputDecoration(
+                  labelText: 'Seva time (optional)',
+                  hintText: '12:00 PM',
+                  helperText: 'Empty = the time with the most available seats',
+                ),
+              ),
+            ],
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 SectionTitle('Devotees (${_devotees.length})'),
-                Text('Rs ${_devotees.length * 300}',
+                if (_service == kServiceSpecial)
+                  Text('Rs ${_devotees.length * 300}',
                     style: const TextStyle(
                         color: kMaroon, fontWeight: FontWeight.w600)),
               ],
@@ -311,7 +376,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Add devotee'),
             ),
-            ],
             const SizedBox(height: 22),
             FilledButton(onPressed: _save, child: const Text('Save details')),
             const SizedBox(height: 10),

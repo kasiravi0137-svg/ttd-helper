@@ -15,6 +15,17 @@ const kServices = {
   kServiceSpecial: 'Special Entry Darshan',
   kServiceArjitha: 'Arjitha Seva',
 };
+// Arjitha Seva names offered on the TTD "Select Seva" dropdown.
+const kSevas = [
+  'All',
+  'Unjal Seva',
+  'Arjitha Brahmotsavam',
+  'Kalyanotsavam',
+  'Sahasra Deepalankara Seva',
+  'Pushpayagam',
+  'Float Festival',
+];
+const kSevaOther = 'Other';
 String serviceName(String s) => kServices[s] ?? kServices[kServiceSpecial]!;
 
 const genders = ['Male', 'Female', 'Other'];
@@ -106,6 +117,7 @@ class Booking {
   Booking({
     this.phone = kPhone,
     this.service = kServiceSpecial,
+    this.seva = '',
     this.date,
     this.slot = '',
     List<Devotee>? devotees,
@@ -116,7 +128,7 @@ class Booking {
     this.pincode = kPincode,
   }) : devotees = devotees ?? [];
 
-  String phone, service, slot, email, city, state, country, pincode;
+  String phone, service, seva, slot, email, city, state, country, pincode;
   DateTime? date;
   List<Devotee> devotees;
 
@@ -128,7 +140,12 @@ class Booking {
   /// Names of required things that are still empty.
   List<String> missing() {
     final m = <String>[];
-    if (service != kServiceSpecial) return m; // Arjitha Seva flow is added later
+    if (service == kServiceArjitha) {
+      if (phone.length != 10) m.add('phone number');
+      if (seva.trim().isEmpty) m.add('seva');
+      if (devotees.isEmpty) m.add('devotees');
+      return m;
+    }
     if (phone.length != 10) m.add('phone number');
     if (date == null) m.add('date');
     if (slot.trim().isEmpty) m.add('slot time');
@@ -144,6 +161,7 @@ class Booking {
   Map<String, dynamic> toJson() => {
         'phone': phone,
         'service': service,
+        'seva': seva,
         'date': date?.toIso8601String(),
         'slot': slot,
         'devotees': devotees.map((d) => d.toJson()).toList(),
@@ -158,6 +176,7 @@ class Booking {
   factory Booking.fromJson(Map<String, dynamic> j) => Booking(
         service: kServices.containsKey(j['service']) ? j['service'] as String : kServiceSpecial,
         date: j['date'] == null ? null : DateTime.tryParse(j['date'] as String),
+        seva: (j['seva'] ?? '') as String,
         slot: (j['slot'] ?? '') as String,
         devotees: ((j['devotees'] ?? []) as List)
             .map((e) => Devotee.fromJson(e as Map<String, dynamic>))

@@ -40,12 +40,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _start() async {
-    if (_b.service != kServiceSpecial) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${serviceName(_b.service)} booking is coming soon'),
-      ));
-      return;
-    }
     final m = _b.missing();
     if (m.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -102,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final missing = _b.missing();
+    final devNames = _b.devotees.isEmpty ? '-' : _b.devotees.map((d) => d.name).join(', ');
     return Scaffold(
       body: Column(
         children: [
@@ -110,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'Tirumala Arjitha Seva'
                 : 'Tirumala special entry darshan',
             subtitle: _b.service == kServiceArjitha
-                ? 'Booking flow coming soon'
+                ? 'Pick the date yourself on the TTD page'
                 : 'Rs 300 per devotee',
           ),
           Expanded(
@@ -165,11 +160,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
-                                      _b.service != kServiceSpecial
-                                          ? 'Coming soon'
-                                          : missing.isEmpty
-                                              ? 'Ready'
-                                              : '${missing.length} missing',
+                                      missing.isEmpty
+                                          ? 'Ready'
+                                          : '${missing.length} missing',
                                       style: TextStyle(
                                           fontSize: 12,
                                           color: missing.isEmpty
@@ -181,8 +174,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               const SizedBox(height: 8),
                               _row('Service', serviceName(_b.service)),
+                              if (_b.service == kServiceArjitha)
+                                _row('Seva', _b.seva.isEmpty ? '-' : _b.seva),
                               _row('Phone',
                                   _b.phone.isEmpty ? '-' : '+91 ${_b.phone}'),
+                              if (_b.service == kServiceArjitha) ...[
+                                _row('Time',
+                                    _b.slot.isEmpty ? 'Most available' : _b.slot),
+                                _row('Devotees', devNames),
+                              ],
                               if (_b.service == kServiceSpecial) ...[
                               _row('Date',
                                   _b.date == null ? '-' : fmtDate(_b.date!)),

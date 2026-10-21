@@ -3,6 +3,27 @@ import 'page_script_helpers.dart';
 
 const kJsSteps = r'''
   // ---------- public API ----------
+  // Seva cards: a green "NNN Available" tile inside a card that also says "N Persons" / price.
+  function sevaCardList() {
+    const tiles = [...document.querySelectorAll('div,span,p')].filter(
+      (e) => vis(e) && e.childElementCount <= 3 &&
+        /^\d+\s*available$/i.test((e.innerText || '').replace(/\s+/g, ' ').trim())
+    );
+    const inner = tiles.filter((t) => !tiles.some((o) => o !== t && t.contains(o)));
+    const out = [];
+    for (const t of inner) {
+      let c = t;
+      for (let i = 0; i < 6 && c.parentElement; i++) {
+        c = c.parentElement;
+        if (/persons?/i.test(c.innerText || '') && (c.innerText || '').length < 300) break;
+      }
+      const text = (c.innerText || '').replace(/\s+/g, ' ').trim();
+      const m = /(\d+)\s*available/i.exec(text);
+      out.push({ card: c, text, avail: m ? parseInt(m[1], 10) : 0 });
+    }
+    return out;
+  }
+
   window.__ttd = {
     v: 4,
     state,
@@ -122,6 +143,115 @@ const kJsSteps = r'''
           y: rc.top + rc.height / 2,
           iw: window.innerWidth,
         });
+      });
+    },
+
+    // ---------- Arjitha Seva ----------
+
+    // Picks the wanted seva in the "Select Seva" dropdown.
+    selectSeva(a) {
+      return run(async () => {
+        if (!a.seva || norm(a.seva) === 'all') return done(true, 'All sevas');
+        const lab = labelEls(['select seva'])[0];
+        if (!lab) return done(false, 'Waiting for the Select Seva box...');
+        const shows = () => {
+          const l = labelEls(['select seva'])[0];
+          return !!l && norm(controlFor(l).innerText).includes(norm(a.seva));
+        };
+        if (shows()) return done(true, 'Seva already selected');
+        const r = await fillDropdown(['select seva'], a.seva, 0);
+        await sleep(700);
+        if (shows()) return done(true, 'Seva: ' + a.seva);
+        done(false, 'Could not select the seva (' + (r.why || 'not shown') + ')');
+      });
+    },
+
+    // The seva cards (with "449 Available") appear after the user taps a date.
+    sevaCards() {
+      return run(async () => {
+        const n = sevaCardList().length;
+        done(n > 0, n > 0 ? 'Seva slots shown' : 'Tap your date on the calendar');
+      });
+    },
+
+    // Selects the wanted seva time (or the one with the most seats), then the ticket count.
+    sevaPick(a) {
+      return run(async () => {
+        let cards = sevaCardList();
+        if (!cards.length) return done(false, 'Waiting for the seva list...');
+        if (a.seva && norm(a.seva) !== 'all') {
+          const f = cards.filter((x) => norm(x.text).includes(norm(a.seva)));
+          if (f.length) cards = f;
+        }
+        let pool = cards.filter((x) => x.avail > 0);
+        if (!pool.length) return done(false, 'No seats available in the list');
+        let note = '';
+        const want = (a.slots || []).map(norm).filter(Boolean);
+        if (want.length) {
+          const m = pool.filter((x) => want.some((w) => norm(x.text).includes(w)));
+          if (!m.length) return done(false, 'Time "' + a.slots[0] + '" is not in the list');
+          pool = m;
+        } else {
+          note = ' (most seats)';
+        }
+        pool.sort((x, y) => y.avail - x.avail);
+        const best = pool[0];
+        const clickCard = () => {
+          const radio = best.card.querySelector('input[type=radio]');
+          best.card.scrollIntoView({ block: 'center' });
+          if (radio) {
+            fireClick(radio);
+          } else {
+            fireClick(best.card);
+          }
+          return radio;
+        };
+        const radio = clickCard();
+        await sleep(600);
+        if (radio && !radio.checked) {
+          fireClick(best.card);
+          await sleep(500);
+        }
+        // Tickets: one ticket covers N persons (card says "2 Persons").
+        const pm = /(\d+)\s*persons?/i.exec(best.text);
+        const persons = pm ? parseInt(pm[1], 10) : 1;
+        const tickets = Math.max(1, Math.ceil((a.count || 1) / persons));
+        let tmsg = '';
+        if (tickets > 1) {
+          const two = String(tickets).padStart(2, '0');
+          let r = await fillDropdown(['number of tickets'], two, 0);
+          if (!r.ok) r = await fillDropdown(['number of tickets'], String(tickets), 0);
+          tmsg = r.ok ? ', tickets ' + two : ', set tickets to ' + two + ' yourself';
+          await sleep(500);
+          // The list may refresh after the ticket count changes: keep our card selected.
+          const again = sevaCardList().find((x) => x.text === best.text);
+          if (again) {
+            const rr = again.card.querySelector('input[type=radio]');
+            if (rr && !rr.checked) fireClick(rr);
+          }
+        }
+        const label = best.text.replace(/\d+\s*available/i, '').trim().slice(0, 50);
+        done(true, 'Selected ' + label + ' - ' + best.avail + ' available' + note + tmsg);
+      });
+    },
+
+    // Presses Continue (always), used after the pilgrim details are filled.
+    goContinue() {
+      return run(async () => {
+        const btns = [...document.querySelectorAll('button,[role=button],a')].filter(
+          (e) =>
+            vis(e) &&
+            !e.disabled &&
+            e.getAttribute('aria-disabled') !== 'true' &&
+            ['continue', 'proceed', 'next'].includes(norm(e.innerText))
+        );
+        if (!btns.length) return done(false, 'Waiting for the Continue button...');
+        const b = btns[btns.length - 1];
+        b.scrollIntoView({ block: 'center' });
+        await sleep(300);
+        b.click();
+        await sleep(1200);
+        done(true, 'Pressed Continue');
       });
     },
 
