@@ -40,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _start() async {
+    if (_b.service != kServiceSpecial) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${serviceName(_b.service)} booking is coming soon'),
+      ));
+      return;
+    }
     final m = _b.missing();
     if (m.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -99,9 +105,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Column(
         children: [
-          const Header(
-            title: 'Tirumala special entry darshan',
-            subtitle: 'Rs 300 per devotee',
+          Header(
+            title: _b.service == kServiceArjitha
+                ? 'Tirumala Arjitha Seva'
+                : 'Tirumala special entry darshan',
+            subtitle: _b.service == kServiceArjitha
+                ? 'Booking flow coming soon'
+                : 'Rs 300 per devotee',
           ),
           Expanded(
             child: _loading
@@ -155,9 +165,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
-                                      missing.isEmpty
-                                          ? 'Ready'
-                                          : '${missing.length} missing',
+                                      _b.service != kServiceSpecial
+                                          ? 'Coming soon'
+                                          : missing.isEmpty
+                                              ? 'Ready'
+                                              : '${missing.length} missing',
                                       style: TextStyle(
                                           fontSize: 12,
                                           color: missing.isEmpty
@@ -168,8 +180,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
+                              _row('Service', serviceName(_b.service)),
                               _row('Phone',
                                   _b.phone.isEmpty ? '-' : '+91 ${_b.phone}'),
+                              if (_b.service == kServiceSpecial) ...[
                               _row('Date',
                                   _b.date == null ? '-' : fmtDate(_b.date!)),
                               _row('Slot', _b.slot.isEmpty ? '-' : _b.slot),
@@ -180,6 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       : _b.devotees
                                           .map((d) => d.name)
                                           .join(', ')),
+                              ],
                               _row('Email', _b.email.isEmpty ? '-' : _b.email),
                               _row(
                                   'Address',
@@ -191,8 +206,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       : [_b.city, _b.state, _b.country, _b.pincode]
                                           .where((e) => e.isNotEmpty)
                                           .join(', ')),
+                              if (_b.service == kServiceSpecial) ...[
                               const Divider(height: 22),
                               _row('Total', 'Rs ${_b.total}'),
+                              ],
                             ],
                           ),
                         ),

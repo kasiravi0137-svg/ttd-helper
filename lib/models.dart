@@ -8,6 +8,15 @@ const kState = 'Andhra Pradesh';
 const kCountry = 'India';
 const kPincode = '523331';
 
+// Which TTD service the app books.
+const kServiceSpecial = 'special';
+const kServiceArjitha = 'arjitha';
+const kServices = {
+  kServiceSpecial: 'Special Entry Darshan',
+  kServiceArjitha: 'Arjitha Seva',
+};
+String serviceName(String s) => kServices[s] ?? kServices[kServiceSpecial]!;
+
 const genders = ['Male', 'Female', 'Other'];
 const idTypes = [
   'Aadhaar Card',
@@ -96,6 +105,7 @@ class Devotee {
 class Booking {
   Booking({
     this.phone = kPhone,
+    this.service = kServiceSpecial,
     this.date,
     this.slot = '',
     List<Devotee>? devotees,
@@ -106,17 +116,19 @@ class Booking {
     this.pincode = kPincode,
   }) : devotees = devotees ?? [];
 
-  String phone, slot, email, city, state, country, pincode;
+  String phone, service, slot, email, city, state, country, pincode;
   DateTime? date;
   List<Devotee> devotees;
 
   int get total => devotees.length * 300;
 
-  bool get isBlank => date == null && slot.isEmpty && devotees.isEmpty;
+  bool get isBlank =>
+      service == kServiceSpecial && date == null && slot.isEmpty && devotees.isEmpty;
 
   /// Names of required things that are still empty.
   List<String> missing() {
     final m = <String>[];
+    if (service != kServiceSpecial) return m; // Arjitha Seva flow is added later
     if (phone.length != 10) m.add('phone number');
     if (date == null) m.add('date');
     if (slot.trim().isEmpty) m.add('slot time');
@@ -131,6 +143,7 @@ class Booking {
 
   Map<String, dynamic> toJson() => {
         'phone': phone,
+        'service': service,
         'date': date?.toIso8601String(),
         'slot': slot,
         'devotees': devotees.map((d) => d.toJson()).toList(),
@@ -143,6 +156,7 @@ class Booking {
 
   // Contact details are fixed: whatever was saved before is ignored for them.
   factory Booking.fromJson(Map<String, dynamic> j) => Booking(
+        service: kServices.containsKey(j['service']) ? j['service'] as String : kServiceSpecial,
         date: j['date'] == null ? null : DateTime.tryParse(j['date'] as String),
         slot: (j['slot'] ?? '') as String,
         devotees: ((j['devotees'] ?? []) as List)

@@ -17,6 +17,7 @@ class DetailsScreen extends StatefulWidget {
 class _DetailsScreenState extends State<DetailsScreen> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _slot;
+  late String _service;
   DateTime? _date;
   bool _dateError = false;
   late List<Devotee> _devotees;
@@ -26,6 +27,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
     super.initState();
     final b = widget.initial;
     _slot = TextEditingController(text: b.slot);
+    _service = b.service;
     _date = b.date;
     _devotees = b.devotees.map((d) => d.copy()).toList();
   }
@@ -112,6 +114,18 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   Future<void> _save() async {
+    if (_service != kServiceSpecial) {
+      // Arjitha Seva: its own flow comes later; keep the Special Entry details as they are.
+      await Store.save(Booking(
+        service: _service,
+        date: _date,
+        slot: _slot.text.trim(),
+        devotees: _devotees,
+      ));
+      if (!mounted) return;
+      Navigator.pop(context, true);
+      return;
+    }
     final formOk = _form.currentState!.validate();
     setState(() => _dateError = _date == null);
     if (!formOk || _date == null) {
@@ -123,6 +137,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
       return;
     }
     final b = Booking(
+      service: _service,
       date: _date,
       slot: _slot.text.trim(),
       devotees: _devotees,
@@ -194,6 +209,37 @@ class _DetailsScreenState extends State<DetailsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const SectionTitle('Booking type'),
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'What do you want to book?'),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _service,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(12),
+                  items: [
+                    for (final e in kServices.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setState(() => _service = v ?? kServiceSpecial),
+                ),
+              ),
+            ),
+            if (_service != kServiceSpecial) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAEEDA),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: kLine),
+                ),
+                child: const Text(
+                  'Arjitha Seva booking is coming soon. Save this choice now; the date, '
+                  'devotee and ticket steps for Arjitha Seva will be added in the next update.',
+                ),
+              ),
+            ],
             const SectionTitle('Login and contact'),
             Container(
               padding: const EdgeInsets.all(14),
@@ -215,6 +261,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ],
               ),
             ),
+            if (_service == kServiceSpecial) ...[
             const SectionTitle('Darshan'),
             InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -264,6 +311,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Add devotee'),
             ),
+            ],
             const SizedBox(height: 22),
             FilledButton(onPressed: _save, child: const Text('Save details')),
             const SizedBox(height: 10),
