@@ -154,15 +154,65 @@ const kJsSteps = r'''
         if (!a.seva || norm(a.seva) === 'all') return done(true, 'All sevas');
         const lab = labelEls(['select seva'])[0];
         if (!lab) return done(false, 'Waiting for the Select Seva box...');
-        const shows = () => {
-          const l = labelEls(['select seva'])[0];
-          return !!l && norm(controlFor(l).innerText).includes(norm(a.seva));
+        const ctl = controlFor(lab);
+        const want = norm(a.seva);
+        if (norm(ctl.innerText).includes(want)) return done(true, 'Seva already selected');
+        // Anything that looks like one list entry just below the box.
+        const listItems = () => {
+          const r = ctl.getBoundingClientRect();
+          return [...document.querySelectorAll('mat-option,[role=option],li,div,span,p,a,button')].filter((e) => {
+            if (!vis(e) || ctl.contains(e) || e.childElementCount > 1) return false;
+            const t = (e.innerText || '').trim();
+            if (t.length < 2 || t.length > 40) return false;
+            const q = e.getBoundingClientRect();
+            return q.top >= r.bottom - 10 && q.top <= r.bottom + 520;
+          });
         };
-        if (shows()) return done(true, 'Seva already selected');
-        const r = await fillDropdown(['select seva'], a.seva, 0);
+        const pick = () => {
+          const it = listItems();
+          return (
+            it.find((e) => norm(e.innerText) === want) ||
+            it.find((e) => norm(e.innerText).includes(want)) ||
+            null
+          );
+        };
+        let opt = pick();
+        if (!opt) {
+          ctl.scrollIntoView({ block: 'center' });
+          await sleep(250);
+          const r = ctl.getBoundingClientRect();
+          const hit = (document.elementFromPoint && document.elementFromPoint(r.left + r.width * 0.5, r.top + r.height * 0.7)) || ctl;
+          fireClick(hit);
+          await sleep(800);
+          opt = pick();
+        }
+        if (!opt && !state.sevaTap) {
+          // Let the app tap the box for real, then look again on the next try.
+          state.sevaTap = 1;
+          const r = ctl.getBoundingClientRect();
+          return done(false, 'Opening the seva list...', {
+            needTap: true,
+            x: r.left + r.width * 0.5,
+            y: r.top + r.height * 0.65,
+            iw: window.innerWidth,
+          });
+        }
+        if (!opt) {
+          const seen = [...new Set(listItems().map((e) => (e.innerText || '').trim()))].slice(0, 12).join(' | ');
+          post({ type: 'log', msg: 'seva list shows: ' + seen });
+          return done(
+            false,
+            seen
+              ? 'Seva "' + a.seva + '" is not in the list now: ' + seen
+              : 'Could not open the seva list'
+          );
+        }
+        opt.scrollIntoView({ block: 'nearest' });
+        fireClick(opt);
         await sleep(700);
-        if (shows()) return done(true, 'Seva: ' + a.seva);
-        done(false, 'Could not select the seva (' + (r.why || 'not shown') + ')');
+        const l2 = labelEls(['select seva'])[0];
+        if (l2 && norm(controlFor(l2).innerText).includes(want)) return done(true, 'Seva: ' + a.seva);
+        done(false, 'Tapped "' + a.seva + '" but it was not selected');
       });
     },
 
