@@ -156,9 +156,15 @@ const kJsSteps = r'''
         if (!lab) return done(false, 'Waiting for the Select Seva box...');
         const ctl = controlFor(lab);
         const want = norm(a.seva);
+        // Text shown in the box itself, without the open list that lives inside the same wrapper.
+        const boxValue = (c) => {
+          const k = c.cloneNode(true);
+          k.querySelectorAll('li,ul,[role=listbox],[role=option],mat-option').forEach((n) => n.remove());
+          return (k.textContent || '').trim();
+        };
         // Only "selected" when the box itself shows just this seva (not an open list
         // or a big container that happens to contain the name).
-        const boxTxt = norm(ctl.innerText || ctl.textContent || '');
+        const boxTxt = norm(boxValue(ctl));
         const others = ['unjal seva', 'arjitha brahmotsavam', 'sahasra deepalankara seva', 'pushpayagam', 'float festival', 'kalyanotsavam']
           .filter((n) => n !== want);
         if (boxTxt.includes(want) && boxTxt.length <= want.length + 30 && !others.some((n) => boxTxt.includes(n)))
@@ -217,7 +223,7 @@ const kJsSteps = r'''
         await sleep(700);
         const chosen = () => {
           const l2 = labelEls(['select seva'])[0];
-          return !!l2 && letters(controlFor(l2).innerText).includes(wl.slice(0, 7));
+          return !!l2 && letters(boxValue(controlFor(l2))).includes(wl.slice(0, 7));
         };
         if (chosen()) { state.sevaTap = 0; return done(true, 'Seva: ' + a.seva); }
         if (!state.optTap) {
