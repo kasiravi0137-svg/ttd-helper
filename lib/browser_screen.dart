@@ -117,6 +117,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   int _progress = 0;
   bool _paused = false;
   bool _manual = false;
+  int _gen = 0; // bumps whenever the step changes, so a late result of a skipped step is ignored
   bool _busy = false;
   bool _expanded = false;
   String _msg = 'Loading the TTD site...';
@@ -333,9 +334,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (!mounted || _paused || _manual || _busy) return;
     if (_i >= _steps.length - 1) return;
     _busy = true;
+    final gen = _gen;
     try {
       final r = _i == 1 ? await _phoneStep() : await _exec(_call(_i));
-      if (!mounted) return;
+      if (!mounted || gen != _gen) return; // user skipped meanwhile: no taps, no log
       if (_i != 1) _addLog('step ${_i + 1} ${_steps[_i].label}: ok=${r['ok']} ${r['msg'] ?? ''}');
       if (r['ok'] == true) {
         if (r['skip'] == true && _i == 0) {
@@ -351,10 +353,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _advance(note: r['msg']?.toString());
         }
       } else {
-        if (r['needTap'] == true) _tapAt(r);
+        if (r['needTap'] == true && gen == _gen) _tapAt(r);
         // In TTD's virtual queue the site decides when to let us in: keep waiting, do not give up.
         if (_i >= 3) {
           final q = await _exec('__ttd.inQueue()');
+          if (gen != _gen) return;
           if (q['ok'] == true) {
             if (mounted) setState(() => _msg = (q['msg'] ?? '').toString());
             return;
@@ -497,6 +500,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _advance({String? note}) {
     if (_i >= _steps.length - 1) return;
+    _gen++;
     setState(() {
       _i++;
       _attempts = 0;
