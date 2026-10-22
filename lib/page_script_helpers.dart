@@ -29,6 +29,11 @@ const kJsHelpers = r'''
       TTD.postMessage(JSON.stringify(o));
     } catch (e) {}
   };
+  if (!window.__ttdTouch) {
+    window.__ttdTouch = 1;
+    // Tell the app when a finger is on the page, so automation pauses while the user works.
+    document.addEventListener('touchstart', () => post({ type: 'touch' }), { passive: true, capture: true });
+  }
   const done = (ok, msg, extra) =>
     post(Object.assign({ type: 'result', ok: !!ok, msg: msg || '' }, extra || {}));
   const run = async (fn) => {
@@ -427,12 +432,18 @@ const kJsHelpers = r'''
   const OPT_STRICT = 'mat-option,[role=option],li,.mat-option,.mat-mdc-option,.option';
   const OPT_LOOSE = OPT_STRICT + ',.dropdown-item,button,a,div,span,p';
 
+  // A real list entry (some sites render the open list INSIDE the field's own wrapper).
+  function isListOpt(e) {
+    return e.tagName === 'LI' || e.tagName === 'MAT-OPTION' || e.getAttribute('role') === 'option' ||
+      /listitem|option/i.test(typeof e.className === 'string' ? e.className : '');
+  }
+
   function findOption(value, ctl, strict) {
     const w = norm(value);
     const pool = [...document.querySelectorAll(strict ? OPT_STRICT : OPT_LOOSE)].filter(
-      (e) => vis(e) && !ctl.contains(e) && !e.contains(ctl)
+      (e) => vis(e) && !e.contains(ctl) && (!ctl.contains(e) || isListOpt(e))
     );
-    const t = (e) => norm(e.innerText);
+    const t = (e) => norm(e.innerText || e.textContent);
     let c = pool.filter((e) => t(e) === w);
     if (!c.length && !strict) {
       c = pool.filter((e) => {
@@ -445,7 +456,7 @@ const kJsHelpers = r'''
 
   function optionTexts(ctl) {
     return [...document.querySelectorAll('mat-option,[role=option],li')]
-      .filter((e) => vis(e) && !ctl.contains(e))
+      .filter((e) => vis(e) && (!ctl.contains(e) || isListOpt(e)))
       .map((e) => (e.innerText || '').trim())
       .filter((s) => s && s.length < 30);
   }

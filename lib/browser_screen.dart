@@ -117,6 +117,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   int _progress = 0;
   bool _paused = false;
   bool _manual = false;
+  DateTime _touched = DateTime.fromMillisecondsSinceEpoch(0); // last finger on the page
+  bool _ownTap = false;
+  DateTime _ownTapUntil = DateTime.fromMillisecondsSinceEpoch(0);
   int _gen = 0; // bumps whenever the step changes, so a late result of a skipped step is ignored
   bool _busy = false;
   bool _expanded = false;
@@ -229,6 +232,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final j = jsonDecode(m.message) as Map<String, dynamic>;
       final p = _pending;
       if (j['type'] == 'result' && p != null && !p.isCompleted) p.complete(j);
+      if (j['type'] == 'touch') {
+        if (DateTime.now().isAfter(_ownTapUntil)) _touched = DateTime.now();
+        return;
+      }
       if (j['type'] == 'log') _addLog('page: ${j['msg']}');
       if (j['type'] == 'progress' && mounted && !_manual) {
         setState(() => _msg = (j['msg'] ?? '').toString());
@@ -333,6 +340,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _tick() async {
     if (!mounted || _paused || _manual || _busy) return;
     if (_i >= _steps.length - 1) return;
+    // The user is touching the page (picking a value, scrolling): leave it alone for a while.
+    if (_i >= 3 && DateTime.now().difference(_touched).inMilliseconds < 7000) {
+      if (mounted && _msg != 'Waiting while you use the page...') {
+        setState(() => _msg = 'Waiting while you use the page...');
+      }
+      return;
+    }
     _busy = true;
     final gen = _gen;
     try {
@@ -485,8 +499,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final id = _ptr++;
       final t = WidgetsBinding.instance.currentSystemFrameTimeStamp;
       final gb = GestureBinding.instance;
+      _ownTap = true;
+      _ownTapUntil = DateTime.now().add(const Duration(milliseconds: 700));
       gb.handlePointerEvent(PointerDownEvent(
           timeStamp: t, pointer: id, kind: PointerDeviceKind.touch, device: id, position: g));
+      _ownTap = false;
       Future.delayed(const Duration(milliseconds: 80), () {
         gb.handlePointerEvent(PointerUpEvent(
             timeStamp: t + const Duration(milliseconds: 80),
@@ -725,7 +742,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
           if (_progress < 100)
             LinearProgressIndicator(
                 value: _progress / 100, minHeight: 3, color: kSaffron),
-          Expanded(child: WebViewWidget(key: _webKey, controller: _c)),
+          Expanded(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) {
+                if (!_ownTap) _touched = DateTime.now();
+              },
+              child: WebViewWidget(key: _webKey, controller: _c),
+            ),
+          ),
           _panel(),
         ],
       ),

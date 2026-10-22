@@ -182,7 +182,7 @@ const kJsSteps = r'''
         const wl = letters(a.seva);
         const optEls = () =>
           deepAll('li[class*=istItem],li[class*=ropdown],mat-option,[role=option],.mat-option,.mat-mdc-option,li')
-            .filter((e) => vis(e) && !ctl.contains(e) && (e.textContent || '').trim().length < 60);
+            .filter((e) => vis(e) && (e.textContent || '').trim().length < 60);
         const listItems = () => optEls();
         const pick = () => {
           const it = optEls();
@@ -314,15 +314,22 @@ const kJsSteps = r'''
     // Presses Continue (always), used after the pilgrim details are filled.
     goContinue() {
       return run(async () => {
-        const btns = [...document.querySelectorAll('button,[role=button],a')].filter(
-          (e) =>
-            vis(e) &&
-            !e.disabled &&
-            e.getAttribute('aria-disabled') !== 'true' &&
-            ['continue', 'proceed', 'next'].includes(norm(e.innerText))
-        );
-        if (!btns.length) return done(false, 'Waiting for the Continue button...');
-        const b = btns[btns.length - 1];
+        const isCont = (e) => ['continue', 'proceed', 'next'].includes(norm(e.innerText || e.textContent));
+        const all = [...document.querySelectorAll('button,[role=button],a,input[type=button],input[type=submit],div,span')]
+          .filter((e) => vis(e) && e.childElementCount <= 2 && isCont(e));
+        const dis = (e) => {
+          const b = e.closest('button') || e;
+          return !!b.disabled || b.getAttribute('aria-disabled') === 'true' || /disabled/i.test(String(b.className || ''));
+        };
+        const btns = all.filter((e) => !dis(e));
+        if (!btns.length) {
+          if (all.length) {
+            return done(false, 'Continue is greyed out - a required field is still empty. Fill it (or tap Skip).');
+          }
+          return done(false, 'Waiting for the Continue button...');
+        }
+        const b0 = btns[btns.length - 1];
+        const b = b0.closest('button') || b0;
         b.scrollIntoView({ block: 'center' });
         await sleep(300);
         b.click();
