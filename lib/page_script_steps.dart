@@ -163,65 +163,55 @@ const kJsSteps = r'''
           .filter((n) => n !== want);
         if (boxTxt.includes(want) && boxTxt.length <= want.length + 30 && !others.some((n) => boxTxt.includes(n)))
           return done(true, 'Seva already selected');
-        // Anything that looks like one list entry just below the box.
-        const listItems = () => {
-          const r = ctl.getBoundingClientRect();
-          // deepAll also looks inside shadow roots (the list can live in an overlay component).
-          return deepAll('mat-option,[role=option],li,div,span,p,a,button').filter((e) => {
-            if (!vis(e) || ctl.contains(e) || e.childElementCount > 3) return false;
-            const t = (e.innerText || e.textContent || '').trim();
-            if (t.length < 2 || t.length > 40) return false;
-            const q = e.getBoundingClientRect();
-            return q.top >= r.top && q.top <= r.bottom + 700;
-          });
-        };
+        // Native <select>: set the value directly.
+        const sel = ctl.querySelector('select') || (lab.parentElement && lab.parentElement.querySelector('select'));
+        if (sel) {
+          const o = [...sel.options].find((x) => norm(x.textContent) === want) ||
+            [...sel.options].find((x) => norm(x.textContent).includes(want));
+          if (o) {
+            sel.value = o.value;
+            sel.dispatchEvent(new Event('input', { bubbles: true }));
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            await sleep(500);
+            return done(true, 'Seva: ' + a.seva);
+          }
+        }
+        // The list only exists in the page while it is open. Never click the box from
+        // here (that would close an open list); the app taps it for real instead.
+        const optEls = () =>
+          deepAll('mat-option,[role=option],.mat-option,.mat-mdc-option').filter((e) => vis(e));
+        const listItems = () => optEls();
         const pick = () => {
-          const it = listItems();
-          return (
-            it.find((e) => norm(e.innerText) === want) ||
-            it.find((e) => norm(e.innerText).includes(want)) ||
-            null
-          );
+          const it = optEls();
+          return it.find((e) => norm(e.textContent) === want) ||
+            it.find((e) => norm(e.textContent).includes(want)) || null;
         };
         let opt = pick();
         if (!opt) {
+          // Looser: any small visible element whose whole text is the seva name.
+          opt = deepAll('div,span,li,p,a,button').find(
+            (e) => vis(e) && e.childElementCount <= 2 && !ctl.contains(e) && norm(e.textContent) === want
+          ) || null;
+        }
+        if (!opt && (state.sevaTap || 0) < 3) {
+          state.sevaTap = (state.sevaTap || 0) + 1;
           ctl.scrollIntoView({ block: 'center' });
           await sleep(250);
-          const r = ctl.getBoundingClientRect();
-          const hit = (document.elementFromPoint && document.elementFromPoint(r.left + r.width * 0.5, r.top + r.height * 0.7)) || ctl;
-          fireClick(hit);
-          await sleep(800);
-          opt = pick();
-        }
-        if (!opt && !state.sevaTap) {
-          // Let the app tap the box for real, then look again on the next try.
-          state.sevaTap = 1;
           const r = ctl.getBoundingClientRect();
           return done(false, 'Opening the seva list...', {
             needTap: true,
             x: r.left + r.width * 0.5,
-            y: r.top + r.height * 0.65,
+            y: r.top + r.height * 0.5,
             iw: window.innerWidth,
           });
         }
         if (!opt) {
-          const seen = [...new Set(listItems().map((e) => (e.innerText || e.textContent || '').trim()))].slice(0, 14).join(' | ');
-          post({ type: 'log', msg: 'seva list shows: ' + seen });
-          // Where does the wanted text live? (for diagnosis)
-          const where = deepAll('*')
-            .filter((e) => (e.textContent || '').trim().toLowerCase() === String(a.seva).trim().toLowerCase())
-            .slice(0, 4)
-            .map((e) => e.tagName.toLowerCase() + '.' + String(e.className || '').split(' ')[0] +
-              (vis(e) ? '' : '(hidden)') + ' top=' + Math.round(e.getBoundingClientRect().top) +
-              ' kids=' + e.childElementCount)
-            .join(' ; ');
-          post({ type: 'log', msg: 'seva text found in: ' + (where || 'nowhere') });
-          return done(
-            false,
-            seen
-              ? 'Seva "' + a.seva + '" is not in the list now: ' + seen
-              : 'Could not open the seva list'
-          );
+          const seen = [...new Set(optEls().map((e) => (e.textContent || '').trim()))].slice(0, 14).join(' | ');
+          const near = deepAll('*').filter((e) => vis(e) && e.childElementCount === 0 && /unjal|kalyan|pushpa/i.test(e.textContent || ''))
+            .slice(0, 3).map((e) => e.tagName.toLowerCase() + '.' + String(e.className || '').split(' ')[0]).join(' ; ');
+          post({ type: 'log', msg: 'seva options: ' + (seen || 'none') + ' | like: ' + (near || 'none') });
+          state.sevaTap = 0;
+          return done(false, seen ? 'Seva "' + a.seva + '" is not in the list now: ' + seen : 'Could not open the seva list');
         }
         opt.scrollIntoView({ block: 'nearest' });
         fireClick(opt);
@@ -459,7 +449,13 @@ const kJsSteps = r'''
 
     pickDate(a) {
       return run(async () => {
+        window.__ttdTap = null;
         const ok = await gotoMonth(a.year, a.month - 1);
+        if (!ok && window.__ttdTap) {
+          const tp = window.__ttdTap;
+          window.__ttdTap = null;
+          return done(false, 'Moving the calendar...', { needTap: true, x: tp.x, y: tp.y, iw: tp.iw });
+        }
         if (!ok) {
           const hh = calHeader();
           let ctx = '';

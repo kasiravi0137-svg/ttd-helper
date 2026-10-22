@@ -822,8 +822,19 @@ const kJsHelpers = r'''
         const rb = b.getBoundingClientRect();
         return rb.width * rb.height - ra.width * ra.height;
       });
-      fireClick(arrows[0].closest('button,[role=button],a') || arrows[0]);
+      const before = h.innerText.trim();
+      const target = arrows[0].closest('button,[role=button],a') || arrows[0];
+      fireClick(target);
       await sleep(650);
+      const h2 = calHeader();
+      if (h2 && h2.innerText.trim() === before) {
+        // A synthetic click did nothing: ask the app for a real finger tap on the arrow.
+        target.scrollIntoView({ block: 'center' });
+        await sleep(200);
+        const tr = target.getBoundingClientRect();
+        window.__ttdTap = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, iw: window.innerWidth };
+        return false;
+      }
     }
     return false;
   }
