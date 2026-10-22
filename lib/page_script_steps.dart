@@ -178,21 +178,19 @@ const kJsSteps = r'''
         }
         // The list only exists in the page while it is open. Never click the box from
         // here (that would close an open list); the app taps it for real instead.
+        const letters = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
+        const wl = letters(a.seva);
         const optEls = () =>
-          deepAll('mat-option,[role=option],.mat-option,.mat-mdc-option').filter((e) => vis(e));
+          deepAll('li[class*=istItem],li[class*=ropdown],mat-option,[role=option],.mat-option,.mat-mdc-option,li')
+            .filter((e) => vis(e) && !ctl.contains(e) && (e.textContent || '').trim().length < 60);
         const listItems = () => optEls();
         const pick = () => {
           const it = optEls();
-          return it.find((e) => norm(e.textContent) === want) ||
-            it.find((e) => norm(e.textContent).includes(want)) || null;
+          return it.find((e) => letters(e.textContent) === wl) ||
+            it.find((e) => wl.length >= 6 && letters(e.textContent).startsWith(wl.slice(0, 7))) ||
+            it.find((e) => letters(e.textContent).includes(wl)) || null;
         };
         let opt = pick();
-        if (!opt) {
-          // Looser: any small visible element whose whole text is the seva name.
-          opt = deepAll('div,span,li,p,a,button').find(
-            (e) => vis(e) && e.childElementCount <= 2 && !ctl.contains(e) && norm(e.textContent) === want
-          ) || null;
-        }
         if (!opt && (state.sevaTap || 0) < 3) {
           state.sevaTap = (state.sevaTap || 0) + 1;
           ctl.scrollIntoView({ block: 'center' });
@@ -214,10 +212,21 @@ const kJsSteps = r'''
           return done(false, seen ? 'Seva "' + a.seva + '" is not in the list now: ' + seen : 'Could not open the seva list');
         }
         opt.scrollIntoView({ block: 'nearest' });
+        await sleep(150);
         fireClick(opt);
         await sleep(700);
-        const l2 = labelEls(['select seva'])[0];
-        if (l2 && norm(controlFor(l2).innerText).includes(want)) return done(true, 'Seva: ' + a.seva);
+        const chosen = () => {
+          const l2 = labelEls(['select seva'])[0];
+          return !!l2 && letters(controlFor(l2).innerText).includes(wl.slice(0, 7));
+        };
+        if (chosen()) { state.sevaTap = 0; return done(true, 'Seva: ' + a.seva); }
+        if (!state.optTap) {
+          // The page ignored the script click: tap the option with a real finger.
+          state.optTap = 1;
+          const q = opt.getBoundingClientRect();
+          return done(false, 'Choosing the seva...', { needTap: true, x: q.left + q.width / 2, y: q.top + q.height / 2, iw: window.innerWidth });
+        }
+        state.optTap = 0;
         done(false, 'Tapped "' + a.seva + '" but it was not selected');
       });
     },
