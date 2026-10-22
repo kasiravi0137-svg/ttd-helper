@@ -188,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               if (_b.service == kServiceSpecial) ...[
                               _row('Date',
                                   _b.date == null ? '-' : fmtDate(_b.date!)),
-                              _row('Slot', _b.slot.isEmpty ? '-' : _b.slot),
+                              _row('Slot', _b.slot.isEmpty ? 'Most available' : _b.slot),
                               _row(
                                   'Devotees',
                                   _b.devotees.isEmpty

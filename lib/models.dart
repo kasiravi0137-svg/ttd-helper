@@ -149,7 +149,6 @@ class Booking {
     }
     if (phone.length != 10) m.add('phone number');
     if (date == null) m.add('date');
-    if (slot.trim().isEmpty) m.add('slot time');
     if (devotees.isEmpty) m.add('devotees');
     if (email.trim().isEmpty) m.add('email');
     if (city.trim().isEmpty) m.add('city');

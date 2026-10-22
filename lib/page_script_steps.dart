@@ -540,7 +540,36 @@ const kJsSteps = r'''
         );
         let el = null;
         let used = '';
-        for (const v of a.slots) {
+        if (!a.slots || !a.slots.length) {
+          // No slot chosen: pick the slot with the most available seats.
+          const timeRe = /\b\d{1,2}:\d{2}\s*(am|pm)\b/i;
+          const cand = [...document.querySelectorAll('div,label,li,mat-radio-button')].filter((e) => {
+            const t = e.innerText || '';
+            return vis(e) && t.length < 140 && timeRe.test(t) && /slot|avail|seat|left|ticket/i.test(t);
+          });
+          const inner = cand.filter((t) => !cand.some((o) => o !== t && t.contains(o)));
+          const scored = inner.map((e) => {
+            const t = (e.innerText || '').replace(/\s+/g, ' ');
+            const rest = t.replace(timeRe, ' ');
+            let m = /(\d+)\s*(available|seats?|left|tickets?)/i.exec(rest) || /(available|seats?|left)\D{0,4}(\d+)/i.exec(rest);
+            let n = m ? parseInt(m[1].match(/^\d+$/) ? m[1] : m[2], 10) : -1;
+            if (n < 0) {
+              const nums = (rest.match(/\d+/g) || []).map(Number);
+              n = nums.length ? Math.max(...nums) : -1;
+            }
+            return { e, t, n, full: /\b(sold out|full|not available)\b/i.test(t) };
+          }).filter((x) => !x.full);
+          if (!scored.length) return done(false, 'Waiting for the slot list...');
+          if (!state.slotDiag) {
+            state.slotDiag = 1;
+            post({ type: 'log', msg: 'slots: ' + scored.map((x) => x.t.slice(0, 40) + ' => ' + x.n).join(' | ') });
+          }
+          scored.sort((x, y) => y.n - x.n);
+          el = scored[0].e;
+          const tm = timeRe.exec(scored[0].t);
+          used = (tm ? tm[0] : 'most available') + ' (' + scored[0].n + ' available)';
+        }
+        for (const v of (el ? [] : a.slots)) {
           const w = ' ' + norm(v) + ' ';
           const c = all.filter((e) => (' ' + norm(e.innerText) + ' ').includes(w));
           const pref = c.filter((e) => norm(e.innerText).includes('slot time'));

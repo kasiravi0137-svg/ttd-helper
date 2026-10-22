@@ -292,8 +292,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
               controller: _slot,
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
-                  labelText: 'Slot time', hintText: '10:00 AM'),
-              validator: (v) => _required(v, 'a slot time'),
+                  labelText: 'Slot time (optional)',
+                  hintText: '10:00 AM',
+                  helperText: 'Empty = the slot with the most available seats'),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -304,7 +305,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                     label: Text(s),
                     selected: _slot.text.trim() == s,
                     selectedColor: kSaffron.withValues(alpha: 0.35),
-                    onSelected: (_) => setState(() => _slot.text = s),
+                    onSelected: (_) => setState(() => _slot.text = _slot.text.trim() == s ? '' : s),
                   ),
               ],
             ),
