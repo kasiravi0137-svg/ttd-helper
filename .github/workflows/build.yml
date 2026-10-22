@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+concurrency:
+  group: build
+  cancel-in-progress: true
+
 env:
   APP_NAME: TTD Helper
 
@@ -214,3 +218,5 @@ jobs:
         with:
           name: ttd-helper-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 1
+          overwrite: true
