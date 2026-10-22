@@ -647,6 +647,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ],
               ),
             ],
+            if (!_manual && !isOtp && !last) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _advance(note: 'Skipped - you did it yourself'),
+                  icon: const Icon(Icons.skip_next),
+                  label: const Text("Skip - I'll do this step"),
+                ),
+              ),
+            ],
             if ((_manual || isOtp) && !last) ...[
               const SizedBox(height: 8),
               Row(

@@ -156,7 +156,13 @@ const kJsSteps = r'''
         if (!lab) return done(false, 'Waiting for the Select Seva box...');
         const ctl = controlFor(lab);
         const want = norm(a.seva);
-        if (norm(ctl.innerText).includes(want)) return done(true, 'Seva already selected');
+        // Only "selected" when the box itself shows just this seva (not an open list
+        // or a big container that happens to contain the name).
+        const boxTxt = norm(ctl.innerText || ctl.textContent || '');
+        const others = ['unjal seva', 'arjitha brahmotsavam', 'sahasra deepalankara seva', 'pushpayagam', 'float festival', 'kalyanotsavam']
+          .filter((n) => n !== want);
+        if (boxTxt.includes(want) && boxTxt.length <= want.length + 30 && !others.some((n) => boxTxt.includes(n)))
+          return done(true, 'Seva already selected');
         // Anything that looks like one list entry just below the box.
         const listItems = () => {
           const r = ctl.getBoundingClientRect();
@@ -238,7 +244,18 @@ const kJsSteps = r'''
     sevaPick(a) {
       return run(async () => {
         let cards = sevaCardList();
-        if (!cards.length) return done(false, 'Waiting for the seva list...');
+        if (!cards.length) {
+          if (!state.sevaDiag || state.sevaDiag < 2) {
+            state.sevaDiag = (state.sevaDiag || 0) + 1;
+            const body = (document.body.innerText || '').replace(/\s+/g, ' ');
+            const i = body.toLowerCase().indexOf('seva slots');
+            post({ type: 'log', msg: 'page after date: ' + (i >= 0 ? body.slice(i, i + 700) : body.slice(0, 500)) });
+            const av = deepAll('*').filter((e) => vis(e) && e.childElementCount <= 2 && /available/i.test(e.textContent || '') && (e.textContent || '').length < 40).slice(0, 4)
+              .map((e) => e.tagName.toLowerCase() + '[' + (e.textContent || '').trim() + ']').join(' ; ');
+            post({ type: 'log', msg: 'available-like: ' + (av || 'none') });
+          }
+          return done(false, 'Waiting for the seva list...');
+        }
         if (a.seva && norm(a.seva) !== 'all') {
           const f = cards.filter((x) => norm(x.text).includes(norm(a.seva)));
           if (f.length) cards = f;
