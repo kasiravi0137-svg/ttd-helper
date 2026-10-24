@@ -45,9 +45,18 @@ const kJsHelpers = r'''
   };
   const PE = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
 
+  // Scroll only when the element is not already comfortably on screen (no jumping around).
+  function bring(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      const H = window.innerHeight;
+      if (r.top < 50 || r.bottom > H - 40) el.scrollIntoView({ block: 'center' });
+    } catch (e) {}
+  }
+
   function fireClick(el) {
     try {
-      el.scrollIntoView({ block: 'center' });
+      bring(el);
     } catch (e) {}
     const r = el.getBoundingClientRect();
     const o = {
@@ -91,7 +100,7 @@ const kJsHelpers = r'''
   }
 
   function setVal(el, v) {
-    el.scrollIntoView({ block: 'center' });
+    bring(el);
     el.focus();
     let ok = false;
     // Typing through execCommand fires real input events, which frameworks trust most.
@@ -149,7 +158,7 @@ const kJsHelpers = r'''
   function clickText(texts, exact) {
     const best = findText(texts, exact);
     if (best) {
-      best.scrollIntoView({ block: 'center' });
+      bring(best);
       best.click();
       return true;
     }
@@ -180,7 +189,7 @@ const kJsHelpers = r'''
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
   }
   async function typeInto(el, text, keysOnly) {
-    el.scrollIntoView({ block: 'center' });
+    bring(el);
     el.focus();
     try {
       el.click();
@@ -352,7 +361,7 @@ const kJsHelpers = r'''
         el.dispatchEvent(new Event('change', { bubbles: true }));
       },
     };
-    el.scrollIntoView({ block: 'center' });
+    bring(el);
     el.focus();
     try {
       el.click();
@@ -463,7 +472,7 @@ const kJsHelpers = r'''
 
   // A real finger tap (done by the app) - the page ignores script clicks on some dropdowns.
   async function realTap(el, fy) {
-    el.scrollIntoView({ block: 'center' });
+    bring(el);
     await sleep(250);
     const r = el.getBoundingClientRect();
     post({ type: 'tap', x: r.left + r.width * 0.5, y: r.top + r.height * (fy || 0.6), iw: window.innerWidth });
@@ -473,7 +482,7 @@ const kJsHelpers = r'''
     [...document.querySelectorAll('li[class*=istItem],mat-option,[role=option]')].some((e) => vis(e));
 
   async function openAndPick(ctl, value, strict) {
-    ctl.scrollIntoView({ block: 'center' });
+    bring(ctl);
     await sleep(250);
     const r = ctl.getBoundingClientRect();
     const hit =
@@ -530,7 +539,7 @@ const kJsHelpers = r'''
       el.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
     }
-    el.scrollIntoView({ block: 'center' });
+    bring(el);
     fireClick(el);
     await sleep(600);
     const o = findOption(value, el, true);
@@ -868,7 +877,7 @@ const kJsHelpers = r'''
       const h2 = calHeader();
       if (h2 && h2.innerText.trim() === before) {
         // A synthetic click did nothing: ask the app for a real finger tap on the arrow.
-        target.scrollIntoView({ block: 'center' });
+        bring(target);
         await sleep(200);
         const tr = target.getBoundingClientRect();
         window.__ttdTap = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, iw: window.innerWidth };

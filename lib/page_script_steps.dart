@@ -102,7 +102,7 @@ const kJsSteps = r'''
         let el = phoneInput();
         if (!el && getOtpButton()) el = await focusPhoneByTap();
         if (!el) return done(false, 'Waiting for the phone box...');
-        el.scrollIntoView({ block: 'center' });
+        bring(el);
         el.focus();
         try {
           el.click();
@@ -134,7 +134,7 @@ const kJsSteps = r'''
           (e) => vis(e) && e.maxLength === 1 && /^(tel|text|number)$/i.test(e.type || 'text'));
         if (boxes.length < 4) return done(false, 'OTP boxes not visible');
         const el = boxes[0];
-        el.scrollIntoView({ block: 'center' });
+        bring(el);
         await sleep(200);
         const rc = el.getBoundingClientRect();
         done(true, 'ready', {
@@ -199,7 +199,7 @@ const kJsSteps = r'''
         let opt = pick();
         if (!opt && (state.sevaTap || 0) < 3) {
           state.sevaTap = (state.sevaTap || 0) + 1;
-          ctl.scrollIntoView({ block: 'center' });
+          bring(ctl);
           await sleep(250);
           const r = ctl.getBoundingClientRect();
           return done(false, 'Opening the seva list...', {
@@ -217,7 +217,7 @@ const kJsSteps = r'''
           state.sevaTap = 0;
           return done(false, seen ? 'Seva "' + a.seva + '" is not in the list now: ' + seen : 'Could not open the seva list');
         }
-        opt.scrollIntoView({ block: 'nearest' });
+        bring(opt);
         await sleep(150);
         fireClick(opt);
         await sleep(700);
@@ -280,7 +280,7 @@ const kJsSteps = r'''
         const best = pool[0];
         const clickCard = () => {
           const radio = best.card.querySelector('input[type=radio]');
-          best.card.scrollIntoView({ block: 'center' });
+          bring(best.card);
           if (radio) {
             fireClick(radio);
           } else {
@@ -331,7 +331,7 @@ const kJsSteps = r'''
         const ok = all.filter((e) => !dis(e));
         if (!ok.length) return done(false, 'Pay Now is greyed out');
         const b = ok[ok.length - 1];
-        b.scrollIntoView({ block: 'center' });
+        bring(b);
         await sleep(300);
         fireClick(b);
         await sleep(900);
@@ -358,7 +358,7 @@ const kJsSteps = r'''
         }
         const b0 = btns[btns.length - 1];
         const b = b0.closest('button') || b0;
-        b.scrollIntoView({ block: 'center' });
+        bring(b);
         await sleep(300);
         b.click();
         await sleep(1200);
@@ -666,7 +666,7 @@ const kJsSteps = r'''
         if (!btns.length) return done(false, all.length ? 'Continue is greyed out - fill the missing field.' : 'Waiting for the Continue button...');
         const b0 = btns[btns.length - 1];
         const b = b0.closest('button') || b0;
-        b.scrollIntoView({ block: 'center' });
+        bring(b);
         await sleep(250);
         fireClick(b);
         await sleep(1500);

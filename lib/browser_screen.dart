@@ -53,6 +53,9 @@ const _specialSteps = [
   _Step('General details',
       'Fill email, city, state and pincode yourself, then tap Done, next.',
       maxAttempts: 3),
+  _Step('Continue to payment',
+      'Tap Continue yourself, then tap Done, next.',
+      maxAttempts: 6),
   _Step('Check and pay',
       'If Continue is still shown, tap it yourself. Pay Now is pressed automatically; then do the captcha and payment.'),
 ];
@@ -337,17 +340,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
             })})';
       case 9:
         return '__ttd.general(${jsonEncode(_generalArgs)})';
+      case 10:
+        return '__ttd.goContinue()';
     }
     return '';
   }
 
   // ---------- step runner ----------
 
+  // Steps that fill many fields (a finger on the page would clash with the auto fill).
+  bool get _isFillStep => _b.service == kServiceArjitha ? (_i == 7 || _i == 8) : (_i == 8 || _i == 9);
+
   Future<void> _tick() async {
     if (!mounted || _paused || _manual || _busy) return;
     if (_i >= _steps.length - 1) return;
     // The user is touching the page (picking a value, scrolling): leave it alone for a while.
-    if (_i >= 3 && DateTime.now().difference(_touched).inMilliseconds < 7000) {
+    if (_isFillStep && DateTime.now().difference(_touched).inMilliseconds < 5000) {
       if (mounted && !_queued && _msg != 'Waiting while you use the page...') {
         setState(() => _msg = 'Waiting while you use the page...');
       }
