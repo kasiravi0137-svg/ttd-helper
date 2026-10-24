@@ -232,6 +232,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final j = jsonDecode(m.message) as Map<String, dynamic>;
       final p = _pending;
       if (j['type'] == 'result' && p != null && !p.isCompleted) p.complete(j);
+      if (j['type'] == 'tap') {
+        _tapAt(j);
+        return;
+      }
       if (j['type'] == 'touch') {
         if (DateTime.now().isAfter(_ownTapUntil)) _touched = DateTime.now();
         return;

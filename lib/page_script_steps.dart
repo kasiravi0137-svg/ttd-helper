@@ -505,7 +505,15 @@ const kJsSteps = r'''
           return norm(e.innerText) === day && r.width <= 150 && r.height <= 150 && r.top >= top - 5 && r.top < top + 800;
         });
         c = c.filter((e) => !c.some((o) => o !== e && e.contains(o)));
-        if (!c.length) return done(false, 'Waiting for day ' + day + ' on the calendar...');
+        if (!c.length) {
+          state.dayWait = (state.dayWait || 0) + 1;
+          if (state.dayWait === 3 || state.dayWait === 30) {
+            const body = (document.body.innerText || '').replace(/\s+/g, ' ');
+            post({ type: 'log', msg: 'no day ' + day + ' yet; header=' + (hdr ? hdr.innerText.trim() : 'none') + ' | page: ' + body.slice(0, 300) });
+          }
+          return done(false, 'Waiting for day ' + day + ' on the calendar...');
+        }
+        state.dayWait = 0;
         const cell = c[0];
         const st = dateState(bgOf(cell));
         if (st === 'full') return done(false, 'Quota is full on this date. Pick another date.');

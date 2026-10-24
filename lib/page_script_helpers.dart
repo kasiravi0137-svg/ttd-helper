@@ -441,7 +441,7 @@ const kJsHelpers = r'''
   function findOption(value, ctl, strict) {
     const w = norm(value);
     const pool = [...document.querySelectorAll(strict ? OPT_STRICT : OPT_LOOSE)].filter(
-      (e) => vis(e) && !e.contains(ctl) && (!ctl.contains(e) || isListOpt(e))
+      (e) => vis(e) && !e.contains(ctl) && (!ctl.contains(e) || isListOpt(e) || !strict)
     );
     const t = (e) => norm(e.innerText || e.textContent);
     let c = pool.filter((e) => t(e) === w);
@@ -461,6 +461,17 @@ const kJsHelpers = r'''
       .filter((s) => s && s.length < 30);
   }
 
+  // A real finger tap (done by the app) - the page ignores script clicks on some dropdowns.
+  async function realTap(el, fy) {
+    el.scrollIntoView({ block: 'center' });
+    await sleep(250);
+    const r = el.getBoundingClientRect();
+    post({ type: 'tap', x: r.left + r.width * 0.5, y: r.top + r.height * (fy || 0.6), iw: window.innerWidth });
+    await sleep(900);
+  }
+  const listOpen = () =>
+    [...document.querySelectorAll('li[class*=istItem],mat-option,[role=option]')].some((e) => vis(e));
+
   async function openAndPick(ctl, value, strict) {
     ctl.scrollIntoView({ block: 'center' });
     await sleep(250);
@@ -471,7 +482,11 @@ const kJsHelpers = r'''
     fireClick(hit);
     await sleep(700);
     let opt = findOption(value, ctl, strict);
-    if (!opt) {
+    if (!opt && !listOpen()) {
+      await realTap(ctl, 0.6);
+      opt = findOption(value, ctl, strict);
+    }
+    if (!opt && !listOpen()) {
       const trig = ctl.querySelector(
         'mat-select,[role=combobox],[role=button],.mat-select-trigger,.mat-mdc-select-trigger,mat-icon,svg,button'
       );
@@ -483,10 +498,23 @@ const kJsHelpers = r'''
     }
     if (!opt) {
       const seen = optionTexts(ctl).slice(0, 6).join(' | ');
+      try {
+        const cr = ctl.getBoundingClientRect();
+        const near = [...new Set([...document.querySelectorAll('li,div,span,p,a')]
+          .filter((e) => vis(e) && e.childElementCount === 0 && e.getBoundingClientRect().top >= cr.top &&
+            e.getBoundingClientRect().top <= cr.bottom + 400)
+          .map((e) => e.tagName.toLowerCase() + '.' + String(e.className || '').split(' ')[0] + '[' + (e.textContent || '').trim().slice(0, 20) + ']'))]
+          .slice(0, 12).join(' ; ');
+        post({ type: 'log', msg: 'dropdown diag (' + value + '): ' + near });
+      } catch (e) {}
       return { ok: false, why: 'option "' + value + '" not found' + (seen ? ' (page shows: ' + seen + ')' : '') };
     }
     fireClick(opt);
     await sleep(500);
+    if (document.contains(opt) && vis(opt)) {
+      // The list is still open: the script click was ignored, tap the entry for real.
+      await realTap(opt, 0.5);
+    }
     return { ok: true };
   }
 
