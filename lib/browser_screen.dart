@@ -54,7 +54,7 @@ const _specialSteps = [
       'Fill email, city, state and pincode yourself, then tap Done, next.',
       maxAttempts: 3),
   _Step('Check and pay',
-      'Check everything, tap Continue yourself, then do captcha and payment.'),
+      'If Continue is still shown, tap it yourself. Pay Now is pressed automatically; then do the captcha and payment.'),
 ];
 
 // Arjitha Seva: the first 3 steps (login, phone, OTP) are the same as Special Entry.
@@ -90,7 +90,7 @@ const _arjithaSteps = [
       'Tap Continue yourself, then tap Done, next.',
       maxAttempts: 6),
   _Step('Check and pay',
-      'Check everything, then do captcha and payment yourself.'),
+      'Pay Now is pressed automatically; then do the captcha and payment yourself.'),
 ];
 
 class BrowserScreen extends StatefulWidget {
@@ -120,6 +120,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   DateTime _touched = DateTime.fromMillisecondsSinceEpoch(0); // last finger on the page
   bool _ownTap = false;
   DateTime _ownTapUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _queued = false;
+  bool _autoPaying = false;
   int _gen = 0; // bumps whenever the step changes, so a late result of a skipped step is ignored
   bool _busy = false;
   bool _expanded = false;
@@ -346,7 +348,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_i >= _steps.length - 1) return;
     // The user is touching the page (picking a value, scrolling): leave it alone for a while.
     if (_i >= 3 && DateTime.now().difference(_touched).inMilliseconds < 7000) {
-      if (mounted && _msg != 'Waiting while you use the page...') {
+      if (mounted && !_queued && _msg != 'Waiting while you use the page...') {
         setState(() => _msg = 'Waiting while you use the page...');
       }
       return;
@@ -377,9 +379,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
           final q = await _exec('__ttd.inQueue()');
           if (gen != _gen) return;
           if (q['ok'] == true) {
-            if (mounted) setState(() => _msg = (q['msg'] ?? '').toString());
+            if (mounted) {
+              setState(() {
+                _queued = true;
+                _msg = (q['msg'] ?? '').toString();
+              });
+            }
             return;
           }
+          if (_queued && mounted) setState(() => _queued = false);
         }
         _attempts++;
         final max = _steps[_i].maxAttempts;
@@ -530,8 +538,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ? _steps[_i].hint
           : ((note == null || note.isEmpty) ? _steps[_i].label : note);
     });
+    if (_i == _steps.length - 1) _autoPay();
     // Do not wait for the next timer tick: start the next step right away.
     Future.delayed(const Duration(milliseconds: 300), _tick);
+  }
+
+  // On the final page, press "Pay Now" automatically (captcha / payment stay with the user).
+  Future<void> _autoPay() async {
+    if (_autoPaying) return;
+    _autoPaying = true;
+    try {
+      for (var k = 0; k < 40; k++) {
+        await Future.delayed(const Duration(seconds: 1));
+        if (!mounted || _i != _steps.length - 1) return;
+        final r = await _exec('__ttd.payNow()');
+        _addLog('pay: ok=${r['ok']} ${r['msg'] ?? ''}');
+        if (r['ok'] == true) {
+          if (mounted) setState(() => _msg = 'Pay Now pressed. Do the captcha and payment.');
+          return;
+        }
+      }
+    } finally {
+      _autoPaying = false;
+    }
   }
 
   Future<void> _autofill() async {
@@ -624,7 +653,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Step ${_i + 1} of ${_steps.length}: ${_steps[_i].label}',
+                      _queued
+                          ? 'TTD waiting screen - please wait'
+                          : 'Step ${_i + 1} of ${_steps.length}: ${_steps[_i].label}',
                       style: const TextStyle(
                           fontWeight: FontWeight.w600, color: kMaroon),
                     ),

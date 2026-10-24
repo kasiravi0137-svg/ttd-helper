@@ -317,6 +317,28 @@ const kJsSteps = r'''
       });
     },
 
+    // Final page: presses "Pay Now".
+    payNow() {
+      return run(async () => {
+        const dis = (e) => {
+          const b = e.closest('button') || e;
+          return !!b.disabled || b.getAttribute('aria-disabled') === 'true' || /disabled/i.test(String(b.className || ''));
+        };
+        const all = [...document.querySelectorAll('button,[role=button],a,input[type=button],input[type=submit]')].filter(
+          (e) => vis(e) && ['pay now', 'make payment', 'proceed to pay'].includes(norm(e.innerText || e.value || ''))
+        );
+        if (!all.length) return done(false, 'Waiting for the Pay Now button...');
+        const ok = all.filter((e) => !dis(e));
+        if (!ok.length) return done(false, 'Pay Now is greyed out');
+        const b = ok[ok.length - 1];
+        b.scrollIntoView({ block: 'center' });
+        await sleep(300);
+        fireClick(b);
+        await sleep(900);
+        done(true, 'Pay Now pressed');
+      });
+    },
+
     // Presses Continue (always), used after the pilgrim details are filled.
     goContinue() {
       return run(async () => {
@@ -348,8 +370,11 @@ const kJsSteps = r'''
     inQueue() {
       return run(async () => {
         const t = ((document.body && document.body.innerText) || '').toLowerCase();
-        const q = t.includes('virtual queue') || t.includes('placed in a queue') || t.includes('waiting room');
-        done(q, q ? 'TTD virtual queue: waiting your turn' : '');
+        const flat = t.replace(/\s+/g, ' ').trim();
+        // The waiting screen shows only a countdown clock like "10:03".
+        const clock = flat.length < 60 && /\b\d{1,2}:\d{2}(:\d{2})?\b/.test(flat);
+        const q = t.includes('virtual queue') || t.includes('placed in a queue') || t.includes('waiting room') || clock;
+        done(q, q ? 'TTD waiting screen: the site will let you in at the shown time' : '');
       });
     },
 
@@ -630,18 +655,26 @@ const kJsSteps = r'''
         const onForm = () =>
           present(['pilgrim details']) || (inputs(['name']).length > 0 && inputs(['age']).length > 0);
         if (onForm()) return done(true, 'Pilgrim form is open');
-        const btns = [...document.querySelectorAll('button,[role=button],a')].filter(
-          (e) =>
-            vis(e) &&
-            !e.disabled &&
-            e.getAttribute('aria-disabled') !== 'true' &&
-            ['continue', 'proceed', 'next'].includes(norm(e.innerText))
+        const dis = (e) => {
+          const b = e.closest('button') || e;
+          return !!b.disabled || b.getAttribute('aria-disabled') === 'true' || /disabled/i.test(String(b.className || ''));
+        };
+        const all = [...document.querySelectorAll('button,[role=button],a,input[type=button],input[type=submit],div,span')].filter(
+          (e) => vis(e) && e.childElementCount <= 2 && ['continue', 'proceed', 'next'].includes(norm(e.innerText || e.textContent))
         );
-        if (!btns.length) return done(false, 'Waiting for the Continue button...');
-        const b = btns[btns.length - 1];
+        const btns = all.filter((e) => !dis(e));
+        if (!btns.length) return done(false, all.length ? 'Continue is greyed out - fill the missing field.' : 'Waiting for the Continue button...');
+        const b0 = btns[btns.length - 1];
+        const b = b0.closest('button') || b0;
         b.scrollIntoView({ block: 'center' });
-        b.click();
+        await sleep(250);
+        fireClick(b);
         await sleep(1500);
+        if (!onForm()) {
+          // Script click ignored: tap it for real.
+          await realTap(b, 0.5);
+          await sleep(1200);
+        }
         done(onForm(), 'Clicked Continue');
       });
     },
