@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: build
   cancel-in-progress: true
@@ -220,3 +223,13 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 1
           overwrite: true
+
+      # Permanent download link (no GitHub login needed, stays until the next build replaces it)
+      - name: Publish APK as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk TTD-Helper.apk
+          gh release delete latest --yes --cleanup-tag --repo "${{ github.repository }}" || true
+          gh release create latest TTD-Helper.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "TTD Helper (latest APK)" --notes "Latest build. Download TTD-Helper.apk and install."
+
