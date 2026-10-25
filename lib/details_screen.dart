@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'models.dart';
 import 'storage.dart';
 import 'theme.dart';
@@ -17,6 +18,7 @@ class DetailsScreen extends StatefulWidget {
 class _DetailsScreenState extends State<DetailsScreen> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _slot;
+  late final TextEditingController _phone, _email, _city, _state, _country, _pincode;
   late String _service;
   String? _seva; // a kSevas entry or kSevaOther
   final _sevaOther = TextEditingController();
@@ -30,6 +32,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
     super.initState();
     final b = widget.initial;
     _slot = TextEditingController(text: b.slot);
+    _phone = TextEditingController(text: b.phone);
+    _email = TextEditingController(text: b.email);
+    _city = TextEditingController(text: b.city);
+    _state = TextEditingController(text: b.state);
+    _country = TextEditingController(text: b.country);
+    _pincode = TextEditingController(text: b.pincode);
     _service = b.service;
     if (kSevas.contains(b.seva)) {
       _seva = b.seva;
@@ -44,6 +52,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
   @override
   void dispose() {
     _slot.dispose();
+    for (final c in [_phone, _email, _city, _state, _country, _pincode]) {
+      c.dispose();
+    }
     _sevaOther.dispose();
     super.dispose();
   }
@@ -144,6 +155,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
         slot: _slot.text.trim(),
         date: _date,
         devotees: _devotees,
+        phone: _phone.text.trim(),
+        email: _email.text.trim(),
+        city: _city.text.trim(),
+        state: _state.text.trim(),
+        country: _country.text.trim(),
+        pincode: _pincode.text.trim(),
       ));
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -165,6 +182,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
       date: _date,
       slot: _slot.text.trim(),
       devotees: _devotees,
+      phone: _phone.text.trim(),
+      email: _email.text.trim(),
+      city: _city.text.trim(),
+      state: _state.text.trim(),
+      country: _country.text.trim(),
+      pincode: _pincode.text.trim(),
     );
     await Store.save(b);
     if (!mounted) return;
@@ -260,16 +283,63 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: kLine),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Filled automatically on the TTD site',
+                  const Text('Filled automatically on the TTD site',
                       style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(height: 8),
-                  Text('Mobile: +91 $kPhone'),
-                  Text('Email: $kEmail'),
-                  Text('City: $kCity, $kState, $kCountry'),
-                  Text('Pincode: $kPincode'),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _phone,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    decoration: const InputDecoration(
+                        labelText: 'Mobile number (login OTP goes here)',
+                        prefixText: '+91 '),
+                    validator: (v) =>
+                        (v ?? '').trim().length == 10 ? null : 'Enter 10 digits',
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    validator: (v) =>
+                        (v ?? '').contains('@') ? null : 'Enter a valid email',
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _city,
+                    decoration: const InputDecoration(labelText: 'City'),
+                    validator: (v) => _required(v, 'city'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _state,
+                    decoration: const InputDecoration(labelText: 'State'),
+                    validator: (v) => _required(v, 'state'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _country,
+                    decoration: const InputDecoration(labelText: 'Country'),
+                    validator: (v) => _required(v, 'country'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _pincode,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    decoration: const InputDecoration(labelText: 'Pincode'),
+                    validator: (v) =>
+                        (v ?? '').trim().length == 6 ? null : 'Enter 6 digits',
+                  ),
                 ],
               ),
             ),

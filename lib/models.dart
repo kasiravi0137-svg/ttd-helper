@@ -172,8 +172,14 @@ class Booking {
         'pincode': pincode,
       };
 
-  // Contact details are fixed: whatever was saved before is ignored for them.
+  // Contact details: the saved ones are used, the built-in ones are the default.
   factory Booking.fromJson(Map<String, dynamic> j) => Booking(
+        phone: ((j['phone'] ?? '') as String).isEmpty ? kPhone : j['phone'] as String,
+        email: ((j['email'] ?? '') as String).isEmpty ? kEmail : j['email'] as String,
+        city: ((j['city'] ?? '') as String).isEmpty ? kCity : j['city'] as String,
+        state: ((j['state'] ?? '') as String).isEmpty ? kState : j['state'] as String,
+        country: ((j['country'] ?? '') as String).isEmpty ? kCountry : j['country'] as String,
+        pincode: ((j['pincode'] ?? '') as String).isEmpty ? kPincode : j['pincode'] as String,
         service: kServices.containsKey(j['service']) ? j['service'] as String : kServiceSpecial,
         date: j['date'] == null ? null : DateTime.tryParse(j['date'] as String),
         seva: (j['seva'] ?? '') as String,
