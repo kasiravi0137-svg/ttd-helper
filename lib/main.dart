@@ -1,18 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'theme.dart';
 import 'home_screen.dart';
 
-/// The app stops working after this date (change it and rebuild to extend).
-final DateTime kExpiry = DateTime(2026, 11, 25);
+/// How long the app works after it is first opened on a phone.
+/// Test: Duration(minutes: 10).  Real build: Duration(days: 30).
+const Duration kTrial = Duration(minutes: 10);
 
-void main() => runApp(const TtdApp());
+const _store = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+);
+
+/// True when the trial time is over, or the phone clock was turned back.
+Future<bool> _isExpired() async {
+  try {
+    final now = DateTime.now();
+    final firstRaw = await _store.read(key: 'first_run_v1');
+    final lastRaw = await _store.read(key: 'last_seen_v1');
+    var first = DateTime.tryParse(firstRaw ?? '');
+    final last = DateTime.tryParse(lastRaw ?? '');
+    if (first == null) {
+      first = now;
+      await _store.write(key: 'first_run_v1', value: now.toIso8601String());
+    }
+    if (last != null && now.isBefore(last.subtract(const Duration(minutes: 2)))) {
+      return true; // clock moved back
+    }
+    if (last == null || now.isAfter(last)) {
+      await _store.write(key: 'last_seen_v1', value: now.toIso8601String());
+    }
+    return !now.isBefore(first.add(kTrial));
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final expired = await _isExpired();
+  runApp(TtdApp(expired: expired));
+}
 
 class TtdApp extends StatelessWidget {
-  const TtdApp({super.key});
+  const TtdApp({super.key, required this.expired});
+  final bool expired;
 
   @override
   Widget build(BuildContext context) {
-    final expired = !DateTime.now().isBefore(kExpiry);
     return MaterialApp(
       title: 'TTD Helper',
       debugShowCheckedModeBanner: false,
