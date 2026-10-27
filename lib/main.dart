@@ -4,8 +4,8 @@ import 'theme.dart';
 import 'home_screen.dart';
 
 /// How long the app works after it is first opened on a phone.
-/// Test: Duration(minutes: 10).  Real build: Duration(days: 30).
-const Duration kTrial = Duration(minutes: 10);
+/// Real build: 30 days. (For a quick test use Duration(minutes: 10).)
+const Duration kTrial = Duration(days: 30);
 
 const _store = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
