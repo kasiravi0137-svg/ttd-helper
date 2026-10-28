@@ -26,6 +26,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   DateTime? _date;
   bool _dateError = false;
   late List<Devotee> _devotees;
+  bool _editContact = false;
 
   @override
   void initState() {
@@ -83,6 +84,57 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
   }
 
+  Future<void> _pickTime() async {
+    final c = TextEditingController(text: _slot.text);
+    final res = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: kCream,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Time (optional)',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Most available = the app picks the time with the most seats.',
+                style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(
+                    label: const Text('Most available'),
+                    onPressed: () => Navigator.pop(ctx, '')),
+                for (final s in _slotChips)
+                  ActionChip(label: Text(s), onPressed: () => Navigator.pop(ctx, s)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: c,
+              decoration: const InputDecoration(
+                  labelText: 'Or type a time', hintText: '07:30 AM'),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, c.text.trim()),
+                child: const Text('Done')),
+          ],
+        ),
+      ),
+    );
+    c.dispose();
+    if (res != null) setState(() => _slot.text = res);
+  }
+
   Future<void> _addDevotee() async {
     final d = await showDevoteeSheet(context);
     if (d != null) setState(() => _devotees.add(d));
@@ -134,7 +186,20 @@ class _DetailsScreenState extends State<DetailsScreen> {
     });
   }
 
+  bool _contactOk() =>
+      _phone.text.trim().length == 10 &&
+      _email.text.contains('@') &&
+      _city.text.trim().isNotEmpty &&
+      _state.text.trim().isNotEmpty &&
+      _country.text.trim().isNotEmpty &&
+      _pincode.text.trim().length == 6;
+
   Future<void> _save() async {
+    if (!_contactOk()) {
+      setState(() => _editContact = true);
+      _snack('Check your contact details');
+      return;
+    }
     if (_service == kServiceArjitha) {
       final okForm = _form.currentState!.validate();
       setState(() {
@@ -240,8 +305,117 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
+  Widget _card(String title, List<Widget> children) => Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kLine),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: const TextStyle(
+                    color: kClay, fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            ...children,
+          ],
+        ),
+      );
+
+  Widget _row(String label, String value, VoidCallback onTap,
+      {String? error, bool muted = false}) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: Text(label,
+                        style: const TextStyle(fontSize: 15, color: Colors.black54))),
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: muted ? Colors.black45 : Colors.black87)),
+                const Icon(Icons.chevron_right, size: 20, color: Colors.black45),
+              ],
+            ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(error,
+                    style: const TextStyle(color: Colors.red, fontSize: 12)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _contactFields() => Column(
+        children: [
+          TextFormField(
+            controller: _phone,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ],
+            decoration: const InputDecoration(
+                labelText: 'Mobile number (login OTP goes here)',
+                prefixText: '+91 '),
+            validator: (v) => (v ?? '').trim().length == 10 ? null : 'Enter 10 digits',
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'Email'),
+            validator: (v) => (v ?? '').contains('@') ? null : 'Enter a valid email',
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _city,
+            decoration: const InputDecoration(labelText: 'City'),
+            validator: (v) => _required(v, 'city'),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _state,
+            decoration: const InputDecoration(labelText: 'State'),
+            validator: (v) => _required(v, 'state'),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _country,
+            decoration: const InputDecoration(labelText: 'Country'),
+            validator: (v) => _required(v, 'country'),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _pincode,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            decoration: const InputDecoration(labelText: 'Pincode'),
+            validator: (v) => (v ?? '').trim().length == 6 ? null : 'Enter 6 digits',
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
+    final arjitha = _service == kServiceArjitha;
+    final timeText = _slot.text.trim().isEmpty ? 'Most available' : _slot.text.trim();
     return Scaffold(
       appBar: AppBar(
         backgroundColor: kMaroon,
@@ -254,224 +428,115 @@ class _DetailsScreenState extends State<DetailsScreen> {
               icon: const Icon(Icons.cleaning_services_outlined)),
         ],
       ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton(onPressed: _save, child: const Text('Save details')),
+        ),
+      ),
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
           children: [
-            const SectionTitle('Booking type'),
-            InputDecorator(
-              decoration: const InputDecoration(labelText: 'What do you want to book?'),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _service,
-                  isExpanded: true,
-                  borderRadius: BorderRadius.circular(12),
-                  items: [
-                    for (final e in kServices.entries)
-                      DropdownMenuItem(value: e.key, child: Text(e.value)),
-                  ],
-                  onChanged: (v) => setState(() => _service = v ?? kServiceSpecial),
-                ),
-              ),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                for (final e in kServices.entries)
+                  ButtonSegment(
+                      value: e.key,
+                      label: Text(e.key == kServiceSpecial ? 'Special Entry' : 'Arjitha Seva')),
+              ],
+              selected: {_service},
+              onSelectionChanged: (v) => setState(() => _service = v.first),
             ),
-            const SectionTitle('Login and contact'),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: kCream,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: kLine),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Filled automatically on the TTD site',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+            _card('1. When', [
+              if (arjitha) ...[
+                InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Select Seva',
+                    errorText: _sevaError ? 'Pick a seva' : null,
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _seva,
+                      hint: const Text('Select seva'),
+                      isExpanded: true,
+                      borderRadius: BorderRadius.circular(12),
+                      items: [
+                        for (final v in [...kSevas, kSevaOther])
+                          DropdownMenuItem(value: v, child: Text(v)),
+                      ],
+                      onChanged: (v) => setState(() {
+                        _seva = v;
+                        _sevaError = false;
+                      }),
+                    ),
+                  ),
+                ),
+                if (_seva == kSevaOther) ...[
                   const SizedBox(height: 10),
                   TextFormField(
-                    controller: _phone,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10),
-                    ],
+                    controller: _sevaOther,
                     decoration: const InputDecoration(
-                        labelText: 'Mobile number (login OTP goes here)',
-                        prefixText: '+91 '),
-                    validator: (v) =>
-                        (v ?? '').trim().length == 10 ? null : 'Enter 10 digits',
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    validator: (v) =>
-                        (v ?? '').contains('@') ? null : 'Enter a valid email',
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _city,
-                    decoration: const InputDecoration(labelText: 'City'),
-                    validator: (v) => _required(v, 'city'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _state,
-                    decoration: const InputDecoration(labelText: 'State'),
-                    validator: (v) => _required(v, 'state'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _country,
-                    decoration: const InputDecoration(labelText: 'Country'),
-                    validator: (v) => _required(v, 'country'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _pincode,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(6),
-                    ],
-                    decoration: const InputDecoration(labelText: 'Pincode'),
-                    validator: (v) =>
-                        (v ?? '').trim().length == 6 ? null : 'Enter 6 digits',
+                        labelText: 'Seva name (as shown on the TTD page)'),
+                    validator: (v) => _required(v, 'the seva name'),
                   ),
                 ],
-              ),
-            ),
-            if (_service == kServiceSpecial) ...[
-            const SectionTitle('Darshan'),
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _pickDate,
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: 'Darshan date',
-                  suffixIcon: const Icon(Icons.calendar_today_outlined),
-                  errorText: _dateError ? 'Pick a date' : null,
-                ),
-                child: Text(_date == null ? 'Select date' : fmtDate(_date!)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _slot,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                  labelText: 'Slot time (optional)',
-                  hintText: '10:00 AM',
-                  helperText: 'Empty = the slot with the most available seats'),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final s in _slotChips)
-                  ChoiceChip(
-                    label: Text(s),
-                    selected: _slot.text.trim() == s,
-                    selectedColor: kSaffron.withValues(alpha: 0.35),
-                    onSelected: (_) => setState(() => _slot.text = _slot.text.trim() == s ? '' : s),
-                  ),
+                const SizedBox(height: 4),
               ],
-            ),
-            ],
-            if (_service == kServiceArjitha) ...[
-              const SectionTitle('Arjitha Seva'),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: kCream,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: kLine),
-                ),
-                child: const Text(
-                    'Temple: Srivari Temple-Tirumala'),
+              _row('Date', _date == null ? 'Select' : fmtDate(_date!), _pickDate,
+                  error: _dateError ? 'Pick a date' : null, muted: _date == null),
+              const Divider(height: 1),
+              _row('Time (optional)', timeText, _pickTime,
+                  muted: _slot.text.trim().isEmpty),
+            ]),
+            _card('2. Who is coming', [
+              for (var i = 0; i < _devotees.length; i++) _devoteeTile(i),
+              OutlinedButton.icon(
+                onPressed: _addDevotee,
+                icon: const Icon(Icons.add),
+                label: const Text('Add person'),
               ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: InputDecoration(
-                  labelText: 'Select Seva',
-                  errorText: _sevaError ? 'Pick a seva' : null,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _seva,
-                    hint: const Text('Select seva'),
-                    isExpanded: true,
-                    borderRadius: BorderRadius.circular(12),
-                    items: [
-                      for (final v in [...kSevas, kSevaOther])
-                        DropdownMenuItem(value: v, child: Text(v)),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _seva = v;
-                      _sevaError = false;
-                    }),
-                  ),
-                ),
+              const SizedBox(height: 8),
+              Text(
+                _devotees.isEmpty
+                    ? 'Add everyone who is coming. Tickets = number of people.'
+                    : 'Tickets = number of people (${_devotees.length})'
+                        '${arjitha ? '' : '  -  Rs ${_devotees.length * 300}'}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
               ),
-              if (_seva == kSevaOther) ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _sevaOther,
-                  decoration: const InputDecoration(
-                      labelText: 'Seva name (as shown on the TTD page)'),
-                  validator: (v) => _required(v, 'the seva name'),
+            ]),
+            _card('3. Your contact', [
+              if (!_editContact) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('+91 ${_phone.text}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600)),
+                    ),
+                    TextButton(
+                        onPressed: () => setState(() => _editContact = true),
+                        child: const Text('Edit')),
+                  ],
+                ),
+                Text('${_email.text}  -  ${_city.text}, ${_pincode.text}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              ] else ...[
+                const SizedBox(height: 4),
+                _contactFields(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                      onPressed: () {
+                        if (_contactOk()) setState(() => _editContact = false);
+                        else _form.currentState?.validate();
+                      },
+                      child: const Text('Done')),
                 ),
               ],
-              const SizedBox(height: 12),
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _pickDate,
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Seva date',
-                    suffixIcon: const Icon(Icons.calendar_today_outlined),
-                    errorText: _dateError ? 'Pick a date' : null,
-                  ),
-                  child: Text(_date == null ? 'Select date' : fmtDate(_date!)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _slot,
-                decoration: const InputDecoration(
-                  labelText: 'Seva time (optional)',
-                  hintText: '12:00 PM',
-                  helperText: 'Empty = the time with the most available seats',
-                ),
-              ),
-            ],
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                SectionTitle('Devotees (${_devotees.length})'),
-                if (_service == kServiceSpecial)
-                  Text('Rs ${_devotees.length * 300}',
-                    style: const TextStyle(
-                        color: kMaroon, fontWeight: FontWeight.w600)),
-              ],
-            ),
-            for (var i = 0; i < _devotees.length; i++) _devoteeTile(i),
-            OutlinedButton.icon(
-              onPressed: _addDevotee,
-              icon: const Icon(Icons.add),
-              label: const Text('Add devotee'),
-            ),
-            const SizedBox(height: 22),
-            FilledButton(onPressed: _save, child: const Text('Save details')),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _clearForm,
-              icon: const Icon(Icons.cleaning_services_outlined),
-              label: const Text('Clear form'),
-            ),
-            const SizedBox(height: 24),
+            ]),
           ],
         ),
       ),
