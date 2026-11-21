@@ -578,7 +578,7 @@ const kJsSteps = r'''
           const timeRe = /\b\d{1,2}:\d{2}\s*(am|pm)\b/i;
           const cand = [...document.querySelectorAll('div,label,li,mat-radio-button')].filter((e) => {
             const t = e.innerText || '';
-            return vis(e) && t.length < 140 && timeRe.test(t) && /slot|avail|seat|left|ticket/i.test(t);
+            return vis(e) && t.length < 140 && timeRe.test(t) && /\d+\s*(available|seats?|left)|(available|seats?|left)\D{0,4}\d+/i.test(t);
           });
           const inner = cand.filter((t) => !cand.some((o) => o !== t && t.contains(o)));
           const scored = inner.map((e) => {

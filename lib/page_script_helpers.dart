@@ -476,7 +476,7 @@ const kJsHelpers = r'''
     await sleep(250);
     const r = el.getBoundingClientRect();
     post({ type: 'tap', x: r.left + r.width * 0.5, y: r.top + r.height * (fy || 0.6), iw: window.innerWidth });
-    await sleep(900);
+    await sleep(650);
   }
   const listOpen = () =>
     [...document.querySelectorAll('li[class*=istItem],mat-option,[role=option]')].some((e) => vis(e));
@@ -549,6 +549,18 @@ const kJsHelpers = r'''
     return true;
   }
 
+  const lettersOf = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // What the field itself shows now (the open list and the label are left out).
+  function shownValue(ctl, lab) {
+    const k = ctl.cloneNode(true);
+    k.querySelectorAll('li,ul,[role=listbox],[role=option],mat-option').forEach((n) => n.remove());
+    return lettersOf(k.textContent).replace(lettersOf(lab.textContent), '');
+  }
+  const showsValue = (sv, value) => {
+    const w = lettersOf(value);
+    return !!sv && (sv === w || sv.startsWith(w.slice(0, Math.min(5, w.length))));
+  };
+
   async function fillDropdown(keys, value, idx) {
     if (!value) return { ok: false, why: 'no value' };
     const s = selects(keys)[idx];
@@ -557,19 +569,20 @@ const kJsHelpers = r'''
     if (!labs[idx]) return { ok: false, why: 'field not found' };
     const lab = labs[idx];
     const ctl = controlFor(lab);
+    // Already filled (by an earlier try or by the user): do not touch it again.
+    if (showsValue(shownValue(ctl, lab), value)) return { ok: true };
     const res = await openAndPick(ctl, value, false);
     if (!res.ok) return res;
-    const after = norm(ctl.innerText);
-    if (after === norm(lab.innerText) || after.length <= norm(lab.innerText).length) {
-      return { ok: false, why: 'tapped but nothing was selected' };
-    }
-    return { ok: true };
+    await sleep(200);
+    if (showsValue(shownValue(ctl, lab), value)) return { ok: true };
+    return { ok: false, why: 'tapped but nothing was selected' };
   }
 
   async function fillAny(keys, value, idx) {
     if (!value) return false;
     const i = inputs(keys)[idx];
     if (!i || i.disabled) return false;
+    if (sameVal(i.value, value)) return true; // already filled
     await enter(i, value);
     await sleep(450);
     const w = norm(value);

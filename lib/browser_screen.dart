@@ -83,6 +83,9 @@ const _arjithaSteps = [
   _Step('Seva time and tickets',
       'Choose the seva time and number of tickets yourself, then tap Done, next.',
       maxAttempts: 10),
+  _Step('Continue to details',
+      'Scroll down and tap Continue yourself, then tap Done, next.',
+      maxAttempts: 6),
   _Step('General details',
       'Fill email, city, state and pincode yourself, then tap Done, next.',
       maxAttempts: 3),
@@ -307,12 +310,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 'count': _b.devotees.length,
               })})';
         case 7:
-          return '__ttd.general(${jsonEncode(_generalArgs)})';
+          return '__ttd.next()';
         case 8:
+          return '__ttd.general(${jsonEncode(_generalArgs)})';
+        case 9:
           return '__ttd.devotees(${jsonEncode({
                 'list': _b.devotees.map(_siteDevotee).toList()
               })})';
-        case 9:
+        case 10:
           return '__ttd.goContinue()';
       }
       return '';
@@ -349,7 +354,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   // ---------- step runner ----------
 
   // Steps that fill many fields (a finger on the page would clash with the auto fill).
-  bool get _isFillStep => _b.service == kServiceArjitha ? (_i == 7 || _i == 8) : (_i == 8 || _i == 9);
+  bool get _isFillStep => _b.service == kServiceArjitha ? (_i == 8 || _i == 9) : (_i == 8 || _i == 9);
 
   Future<void> _tick() async {
     if (!mounted || _paused || _manual || _busy) return;
