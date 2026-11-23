@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -215,7 +215,22 @@ jobs:
 
       - run: flutter pub get
 
-      - run: flutter build apk --release
+      - name: Build APK
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build.log
+
+      - name: Show the build error (only when the build fails)
+        if: failure()
+        run: |
+          {
+            echo '## Build error (copy these lines)'
+            echo '```'
+            grep -n -i -E "error:|what went wrong|execution failed|failure:|exception|could not|requires|incompatible|not found" build.log | grep -v -E "Downloading|Fetch remote" | tail -30
+            echo '--- last 40 lines ---'
+            tail -40 build.log
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
