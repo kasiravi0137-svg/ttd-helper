@@ -186,6 +186,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   String _short(String u) => u.length > 110 ? '${u.substring(0, 110)}...' : u;
 
+  /// Safe test: shows a small page with two buttons that try to open a UPI app from inside the WebView.
+  /// No money moves: the payee is fake and you simply close the UPI app.
+  void _upiTest() {
+    _addLog('--- UPI test page ---');
+    _c.loadHtmlString('''
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:sans-serif;padding:24px;background:#fdf0f3">
+<h2>UPI test</h2>
+<p>Tap a button. If a UPI app (GPay, PhonePe...) opens, payment redirect works. Do NOT pay, just close it.</p>
+<p><a href="upi://pay?pa=test@upi&pn=Test" style="display:block;padding:18px;margin:12px 0;background:#6a3399;color:#fff;text-align:center;border-radius:12px;text-decoration:none;font-size:18px">Test 1: upi:// link</a></p>
+<p><a href="intent://pay?pa=test@upi&pn=Test#Intent;scheme=upi;end" style="display:block;padding:18px;margin:12px 0;background:#6a3399;color:#fff;text-align:center;border-radius:12px;text-decoration:none;font-size:18px">Test 2: intent:// link</a></p>
+<p><a href="https://ttdevasthanams.ap.gov.in" style="display:block;padding:18px;margin:12px 0;background:#4a1a0e;color:#fff;text-align:center;border-radius:12px;text-decoration:none;font-size:18px">Back to TTD site</a></p>
+</body></html>''');
+  }
+
   Future<void> _openExternal(String u) async {
     try {
       var url = u;
@@ -811,6 +826,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
             icon: const Icon(Icons.arrow_back), onPressed: _back),
         title: const Text('TTD booking'),
         actions: [
+          IconButton(
+              tooltip: 'UPI test',
+              onPressed: _upiTest,
+              icon: const Icon(Icons.currency_rupee)),
           IconButton(
               tooltip: 'Log',
               onPressed: _showLog,

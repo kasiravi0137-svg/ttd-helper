@@ -489,6 +489,15 @@ const kJsSteps = r'''
           await sleep(900);
           done(true, 'Opened ' + texts[0]);
         } else {
+          if (!window.__ttdClickDiag || Date.now() - window.__ttdClickDiag > 15000) {
+            window.__ttdClickDiag = Date.now();
+            const hits = [...document.querySelectorAll('a,button,div,span,p,li,h1,h2,h3,h4')]
+              .filter((e) => e.children.length < 3 && /darshan|entry|seva|service/i.test(e.innerText || ''))
+              .map((e) => (e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40) + (vis(e) ? '' : ' [hidden]'))
+              .filter((t, i, a) => t && a.indexOf(t) === i)
+              .slice(0, 12);
+            post({ type: 'log', msg: 'tile diag: ' + (hits.join(' | ') || 'nothing like it on this page') });
+          }
           done(false, 'Waiting for "' + texts[0] + '"...');
         }
       });
