@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'cdp.dart';
@@ -112,6 +113,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final GlobalKey _webKey = GlobalKey();
   int _ptr = 900;
   final List<String> _log = [];
+  String _lastPayLog = '';
   Timer? _timer;
   StreamSubscription<String>? _sms;
   String? _lastOtp;
@@ -153,6 +155,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
         onProgress: (p) {
           if (mounted) setState(() => _progress = p);
         },
+        onPageStarted: (u) => _addLog('open: ${_short(u)}'),
+        onWebResourceError: (e) {
+          if (e.isForMainFrame != false) {
+            _addLog('page error: ${e.description} (${_short(e.url ?? '')})');
+          }
+        },
+        onNavigationRequest: (req) {
+          final u = req.url;
+          final sch = Uri.tryParse(u)?.scheme.toLowerCase() ?? '';
+          if (sch == 'http' || sch == 'https' || sch == 'about' || sch == 'data' || sch == 'blob' || sch == 'file' || sch == 'javascript' || sch.isEmpty) {
+            return NavigationDecision.navigate;
+          }
+          // Payment apps (upi:, phonepe:, intent: ...) cannot open inside the page: hand them to Android.
+          _addLog('app link: ${_short(u)}');
+          _openExternal(u);
+          return NavigationDecision.prevent;
+        },
       ))
       ..loadRequest(Uri.parse(kTtdUrl));
     _timer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _tick());
@@ -163,6 +182,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _timer?.cancel();
     _sms?.cancel();
     super.dispose();
+  }
+
+  String _short(String u) => u.length > 110 ? '${u.substring(0, 110)}...' : u;
+
+  Future<void> _openExternal(String u) async {
+    try {
+      var url = u;
+      if (u.startsWith('intent:')) {
+        final sm = RegExp(r'scheme=([a-zA-Z0-9+.-]+);').firstMatch(u);
+        final body = u.substring(7, u.contains('#Intent') ? u.indexOf('#Intent') : u.length);
+        if (sm != null) url = '${sm.group(1)}:$body';
+      }
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      _addLog('app link opened: $ok');
+    } catch (e) {
+      _addLog('app link failed: $e');
+    }
   }
 
   Future<void> _startSms() async {
@@ -565,7 +601,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
         await Future.delayed(const Duration(seconds: 1));
         if (!mounted || _i != _steps.length - 1) return;
         final r = await _exec('__ttd.payNow()');
-        _addLog('pay: ok=${r['ok']} ${r['msg'] ?? ''}');
+        final pm = 'pay: ok=${r['ok']} ${r['msg'] ?? ''}';
+        if (pm != _lastPayLog) {
+          _lastPayLog = pm;
+          _addLog(pm);
+        }
         if (r['ok'] == true) {
           if (mounted) setState(() => _msg = 'Pay Now pressed. Do the captcha and payment.');
           return;
