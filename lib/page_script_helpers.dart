@@ -570,11 +570,20 @@ const kJsHelpers = r'''
     const lab = labs[idx];
     const ctl = controlFor(lab);
     // Already filled (by an earlier try or by the user): do not touch it again.
-    if (showsValue(shownValue(ctl, lab), value)) return { ok: true };
+    window.__ttdOk = window.__ttdOk || {};
+    const okKey = 'dd:' + keys[0] + '#' + idx;
+    if (showsValue(shownValue(ctl, lab), value)) { window.__ttdOk[okKey] = true; return { ok: true }; }
+    // Filled once by this app and it still shows something: never touch it again.
+    if (window.__ttdOk[okKey] && shownValue(ctl, lab)) return { ok: true };
+    // Tried twice already: stop touching it (no more scrolling back to this field). The user picks it.
+    window.__ttdDd = window.__ttdDd || {};
+    const dk = keys[0] + '#' + idx;
+    window.__ttdDd[dk] = (window.__ttdDd[dk] || 0) + 1;
+    if (window.__ttdDd[dk] > 2) return { ok: false, why: 'pick it yourself', gaveUp: true };
     const res = await openAndPick(ctl, value, false);
     if (!res.ok) return res;
     await sleep(200);
-    if (showsValue(shownValue(ctl, lab), value)) return { ok: true };
+    if (showsValue(shownValue(ctl, lab), value)) { window.__ttdOk[okKey] = true; return { ok: true }; }
     return { ok: false, why: 'tapped but nothing was selected' };
   }
 
@@ -582,8 +591,18 @@ const kJsHelpers = r'''
     if (!value) return false;
     const i = inputs(keys)[idx];
     if (!i || i.disabled) return false;
-    if (sameVal(i.value, value)) return true; // already filled
+    window.__ttdOk = window.__ttdOk || {};
+    const okk = 'in:' + keys[0] + '#' + idx;
+    if (sameVal(i.value, value)) { window.__ttdOk[okk] = true; return true; } // already filled
+    // Filled once by this app and it still has some text: never touch it again.
+    if (window.__ttdOk[okk] && String(i.value || '').trim()) return true;
+    // Typed it 3 times already and it still looks different: leave it alone (no more jumping to it).
+    window.__ttdFa = window.__ttdFa || {};
+    const fk = keys[0] + '#' + idx;
+    window.__ttdFa[fk] = (window.__ttdFa[fk] || 0) + 1;
+    if (window.__ttdFa[fk] > 3) return true;
     await enter(i, value);
+    window.__ttdOk[okk] = true;
     await sleep(450);
     const w = norm(value);
     const opts = [...document.querySelectorAll('mat-option,[role=option]')].filter(vis);
